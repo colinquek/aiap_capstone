@@ -1,62 +1,50 @@
-# Customer Churn Prediction — AIAP Capstone Project
+# Customer Churn Prediction — Exploratory Data Analysis & Feature Insights
 
-## 1. Executive Summary & Problem Objective
-This project addresses customer churn prediction using the dataset (`synthetic_data_204.csv`). Customer churn represents a critical operational loss in retail and membership services. The business objective is to identify churn-prone customers early to allow proactive, cost-effective retention strategies.
+## Executive Summary & Dataset Overview
+This document summarizes the **Exploratory Data Analysis (EDA)** phase for predicting customer churn using `synthetic_data_204.csv`. The business goal is to identify churn-prone customers to optimize proactive retention campaigns.
 
-### Mathematical Framing
-* **Task Type:** Binary Classification
-* **Target Variable ($y$):** `customer_churn`
-  * `1` = `Churned` (Positive Class — Target of Interest)
-  * `0` = `Retained` (Negative Class — Baseline State)
-* **Dataset Scale:** 1,000 records, 6 predictor attributes, 1 target attribute.
-* **Class Balance:** ~15% `Churned` (150 rows) vs ~85% `Retained` (850 rows).
+* **Dataset Dimensions:** 1,000 rows, 6 predictor attributes, 1 target variable (`customer_churn`).
+* **Class Balance:** 850 `Retained` (85.0%) vs. 150 `Churned` (15.0%).
+* **Missing Values & Duplicates:** 0 missing values across all columns; 0 duplicate records.
 
 ---
 
-## 2. Literature Review & Methodology Selection
+## Key Analytical Insights & Statistical Hypotheses
 
-### 2.1 Candidate Model Architectures
-To establish a rigorous comparative framework, three distinct model families are evaluated:
+### 1. Customer Satisfaction Score ($p = 7.11 	imes 10^{-31}$)
+* **Finding:** Churning customers exhibit a statistically significantly higher median satisfaction score ($0.908$) compared to retained customers ($0.772$).
+* **Business Interpretation:** Indicates a potential artifact in survey collection or high expectation levels among dissatisfied churners.
 
-1. **Logistic Regression (Linear Baseline):**
-   - Serves as the interpretable baseline model.
-   - Fits log-odds ratio: $\ln\left(\frac{P(y=1)}{1-P(y=1)}\right) = \beta_0 + \beta_1 X_1 + \dots + \beta_p X_p$.
-   - Requires continuous normalization (`StandardScaler`) and categorical encoding (`OneHotEncoder`).
+### 2. Customer Complaints ($p = 2.96 	imes 10^{-23}$)
+* **Finding:** Retained customers log higher average complaints ($5.27$) than churned customers ($2.75$).
+* **Business Interpretation:** Active customers communicate complaints through support channels, whereas churned customers leave silently without lodging formal complaints.
 
-2. **K-Nearest Neighbors (KNN - Distance-Based Classifier):**
-   - Evaluates local feature space density using Minkowski/Euclidean distance metrics.
-   - Extremely sensitive to feature scales; requires strict preprocessing pipelines.
+### 3. Monthly Spend ($p = 7.15 	imes 10^{-12}$)
+* **Finding:** Churning customers have a higher median spend ($72.21$) than retained customers ($52.04$). High-value customers are at higher risk of switching providers.
 
-3. **Tree-Based Ensembles (Random Forest / Gradient Boosted Trees):**
-   - Non-parametric models capable of capturing non-linear interactions (e.g., interaction between high complaint counts and low store visits).
-   - Immune to feature scaling differences; provides tree-based feature importances.
-
-### 2.2 Evaluation Metrics Strategy
-Because the dataset exhibits a 15:85 class imbalance, standard **Accuracy** is misleading (a naive classifier predicting all `Retained` achieves 85% accuracy).
-
-* **Primary Metrics:**
-  - **ROC-AUC (Receiver Operating Characteristic Area Under Curve):** Evaluates class separation quality across all probability thresholds.
-  - **PR-AUC (Precision-Recall Area Under Curve):** Focuses specifically on performance in the minority positive class (`Churned`).
-  - **F1-Score:** Harmonic mean of Precision and Recall.
-* **Secondary Metrics:** Precision, Recall, Confusion Matrix.
+### 4. Null Finding: Discount Usage Rate ($p = 0.7527$)
+* **Finding:** Discount usage rate shows no statistically significant difference between retained ($0.278$) and churned ($0.284$) customers ($p = 0.7527$).
+* **Pre-selection Action:** `discount_usage_rate` offers low standalone discriminative power for linear baselines.
 
 ---
 
-## 3. Production Pipeline Architecture
+## Statistical Testing & Multicollinearity Summary
 
-```text
-├── data/
-│   └── synthetic_data_204.csv   # Raw input dataset
-├── models/                       # Persisted model pipeline artifacts (.joblib)
-├── src/
-│   ├── config.yaml               # Pipeline parameters, schema definitions, paths
-│   ├── data_preparation.py       # Modular DataPreparation class (cleaning & scaling)
-│   └── model_training.py         # Modular ModelTraining class (fitting & tuning)
-├── tests/                        # Automated unit tests (pytest)
-│   ├── test_data_preparation.py
-│   └── test_model_training.py
-├── eda.ipynb                     # Hypothesis-driven EDA and prototyping
-├── main.py                       # Pipeline execution orchestrator
-├── experiments.json              # Structured experiment tracking logs
-├── requirements.txt              # Pinned dependencies
-└── README.md                     # Comprehensive project documentation
+| Feature | Data Type | Subgroup Comparison (Retained vs Churned) | Statistical Test | $p$-value | Significance ($alpha=0.05$) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`customer_satisfaction_score`** | Continuous | Median: $0.772$ vs $0.908$ | Mann-Whitney U | $7.11 	imes 10^{-31}$ | **Statistically Significant** |
+| **`number_of_complaints`** | Continuous | Mean: $5.27$ vs $2.75$ | Mann-Whitney U | $2.96 	imes 10^{-23}$ | **Statistically Significant** |
+| **`monthly_spend`** | Continuous | Median: $\$52.04$ vs $\$72.21$ | Mann-Whitney U | $7.15 	imes 10^{-12}$ | **Statistically Significant** |
+| **`membership_tier`** | Categorical | Churn Rate: Basic ($19.4\%$), Premium ($12.8\%$), Pro ($4.8\%$) | Chi-Square Contingency | $2.62 	imes 10^{-05}$ | **Statistically Significant** |
+| **`number_of_store_visits`** | Continuous | Mean: $14.57$ vs $16.97$ | Mann-Whitney U | $1.92 	imes 10^{-03}$ | **Statistically Significant** |
+| **`discount_usage_rate`** | Continuous | Mean: $0.278$ vs $0.284$ | Mann-Whitney U | $0.7527$ | **Not Significant** |
+
+### Multicollinearity Analysis (VIF)
+* All Variance Inflation Factor (VIF) values remain under $7.3$ (`customer_satisfaction_score`: $7.30$, `monthly_spend`: $5.87$, `number_of_store_visits_per_month`: $4.58$, `discount_usage_rate`: $4.59$, `number_of_complaints`: $3.01$). Multicollinearity is within acceptable modeling bounds.
+
+---
+
+## Preprocessing & Feature Engineering Strategy
+1. **Derived Feature Construction:** `complaint_to_visit_ratio` ($p = 2.51 	imes 10^{-21}$) engineered as a high-impact interaction predictor.
+2. **Stratified Splitting:** Train/Val/Test splitting must preserve the $15.0\%$ churn ratio (`stratify=y`).
+3. **Scaling & Encoding:** Apply `StandardScaler` to continuous predictors and `OneHotEncoder(handle_unknown='ignore')` to `membership_tier`.
