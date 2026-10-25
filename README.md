@@ -1,50 +1,127 @@
-# Customer Churn Prediction — Exploratory Data Analysis & Feature Insights
+# Sprint 1: Literature Review — Customer Churn Classification
 
-## Executive Summary & Dataset Overview
-This document summarizes the **Exploratory Data Analysis (EDA)** phase for predicting customer churn using `synthetic_data_204.csv`. The business goal is to identify churn-prone customers to optimize proactive retention campaigns.
+## Overview & Objective
 
-* **Dataset Dimensions:** 1,000 rows, 6 predictor attributes, 1 target variable (`customer_churn`).
-* **Class Balance:** 850 `Retained` (85.0%) vs. 150 `Churned` (15.0%).
-* **Missing Values & Duplicates:** 0 missing values across all columns; 0 duplicate records.
+The objective of Sprint 1 is to conduct a comprehensive literature review identifying best practices, methodologies, model architectures, feature engineering techniques, class imbalance strategies, and evaluation metrics specific to binary classification machine learning problems. 
 
----
-
-## Key Analytical Insights & Statistical Hypotheses
-
-### 1. Customer Satisfaction Score ($p = 7.11 	imes 10^{-31}$)
-* **Finding:** Churning customers exhibit a statistically significantly higher median satisfaction score ($0.908$) compared to retained customers ($0.772$).
-* **Business Interpretation:** Indicates a potential artifact in survey collection or high expectation levels among dissatisfied churners.
-
-### 2. Customer Complaints ($p = 2.96 	imes 10^{-23}$)
-* **Finding:** Retained customers log higher average complaints ($5.27$) than churned customers ($2.75$).
-* **Business Interpretation:** Active customers communicate complaints through support channels, whereas churned customers leave silently without lodging formal complaints.
-
-### 3. Monthly Spend ($p = 7.15 	imes 10^{-12}$)
-* **Finding:** Churning customers have a higher median spend ($72.21$) than retained customers ($52.04$). High-value customers are at higher risk of switching providers.
-
-### 4. Null Finding: Discount Usage Rate ($p = 0.7527$)
-* **Finding:** Discount usage rate shows no statistically significant difference between retained ($0.278$) and churned ($0.284$) customers ($p = 0.7527$).
-* **Pre-selection Action:** `discount_usage_rate` offers low standalone discriminative power for linear baselines.
+This document serves as the foundational literature review and methodological baseline for predicting customer churn (`customer_churn`) within a production-ready machine learning framework.
 
 ---
 
-## Statistical Testing & Multicollinearity Summary
+## 1. Classification Model Architectures for Tabular Data
 
-| Feature | Data Type | Subgroup Comparison (Retained vs Churned) | Statistical Test | $p$-value | Significance ($alpha=0.05$) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **`customer_satisfaction_score`** | Continuous | Median: $0.772$ vs $0.908$ | Mann-Whitney U | $7.11 	imes 10^{-31}$ | **Statistically Significant** |
-| **`number_of_complaints`** | Continuous | Mean: $5.27$ vs $2.75$ | Mann-Whitney U | $2.96 	imes 10^{-23}$ | **Statistically Significant** |
-| **`monthly_spend`** | Continuous | Median: $\$52.04$ vs $\$72.21$ | Mann-Whitney U | $7.15 	imes 10^{-12}$ | **Statistically Significant** |
-| **`membership_tier`** | Categorical | Churn Rate: Basic ($19.4\%$), Premium ($12.8\%$), Pro ($4.8\%$) | Chi-Square Contingency | $2.62 	imes 10^{-05}$ | **Statistically Significant** |
-| **`number_of_store_visits`** | Continuous | Mean: $14.57$ vs $16.97$ | Mann-Whitney U | $1.92 	imes 10^{-03}$ | **Statistically Significant** |
-| **`discount_usage_rate`** | Continuous | Mean: $0.278$ vs $0.284$ | Mann-Whitney U | $0.7527$ | **Not Significant** |
+In tabular machine learning benchmarks, decision tree ensembles consistently demonstrate superior inductive bias over deep neural networks and linear baselines. Four candidate model families are evaluated for this capstone:
 
-### Multicollinearity Analysis (VIF)
-* All Variance Inflation Factor (VIF) values remain under $7.3$ (`customer_satisfaction_score`: $7.30$, `monthly_spend`: $5.87$, `number_of_store_visits_per_month`: $4.58$, `discount_usage_rate`: $4.59$, `number_of_complaints`: $3.01$). Multicollinearity is within acceptable modeling bounds.
+### 1.1 Linear & Parametric Baselines: Logistic Regression
+Logistic Regression models the log-odds of the positive outcome as a linear combination of input features:
+
+$$\log\left(\frac{P(Y=1|X)}{1 - P(Y=1|X)}\right) = \beta_0 + \mathbf{\beta}^T \mathbf{X}$$
+
+* **Strengths**: Highly interpretable, computationally lightweight, serves as an essential baseline for pipeline validation.
+* **Limitations**: Assumes linear decision boundaries and independent predictors (susceptible to multicollinearity). Requires feature scaling and encoding.
+* **Regularization**: $L_1$ (Lasso) for explicit feature selection, $L_2$ (Ridge) for shrinkage under multicollinearity, or ElasticNet ($\alpha L_1 + (1-\alpha) L_2$).
+
+### 1.2 Distance-Based Non-Parametric Models: $K$-Nearest Neighbors ($K$-NN)
+$K$-NN classifies an instance based on the majority vote of its $k$ nearest neighbors in feature space using distance metrics such as Euclidean or Manhattan distance:
+
+$$d(\mathbf{x}, \mathbf{y}) = \sqrt{\sum_{i=1}^n (x_i - y_i)^2}$$
+
+* **Strengths**: Non-parametric, capable of capturing complex non-linear decision boundaries without assuming feature distributions.
+* **Limitations**: Highly sensitive to feature scales (requires standardization/normalization), computationally expensive during inference $\mathcal{O}(N \cdot P)$, and vulnerable to the curse of dimensionality.
+
+### 1.3 Tree-Based Interpretability: Decision Trees
+Decision Trees recursively partition feature space into orthogonal hyperplanes by maximizing information gain or minimizing impurity metrics such as Gini Impurity:
+
+$$I_G(p) = 1 - \sum_{i=1}^C p_i^2$$
+
+* **Strengths**: Scale-invariant to monotonic transformations, natural handling of mixed feature types, high interpretability via decision paths.
+* **Limitations**: Prone to severe overfitting and variance; sensitive to minor perturbations in training data without tree pruning (`max_depth`, `min_samples_leaf`).
+
+### 1.4 Tree Ensembles & Gradient Boosting (Random Forest, XGBoost, LightGBM)
+* **Random Forest (Bagging)**: Reduces variance by averaging predictions across $B$ decorrelated decision trees built on bootstrap samples with random feature subsampling.
+* **Gradient Boosted Decision Trees (GBDT)**: Sequentially builds additive decision trees to minimize a differentiable loss function via gradient descent in function space:
+
+$$F_m(\mathbf{x}) = F_{m-1}(\mathbf{x}) + \gamma_m h_m(\mathbf{x})$$
+
+* **Empirical Justification**: Ensemble methods effectively capture higher-order feature interactions, accommodate unscaled/mixed features, and consistently achieve state-of-the-art ROC-AUC and PR-AUC scores on imbalanced tabular benchmarks.
 
 ---
 
-## Preprocessing & Feature Engineering Strategy
-1. **Derived Feature Construction:** `complaint_to_visit_ratio` ($p = 2.51 	imes 10^{-21}$) engineered as a high-impact interaction predictor.
-2. **Stratified Splitting:** Train/Val/Test splitting must preserve the $15.0\%$ churn ratio (`stratify=y`).
-3. **Scaling & Encoding:** Apply `StandardScaler` to continuous predictors and `OneHotEncoder(handle_unknown='ignore')` to `membership_tier`.
+## 2. Feature Engineering & Preprocessing Best Practices
+
+All data transformations must be fitted exclusively on training folds and subsequently applied to validation/test sets to prevent data leakage.
+
+### 2.1 Missing Data Imputation Strategy
+Data missingness must be analyzed prior to cleaning to distinguish between Missing Completely at Random (MCAR), Missing at Random (MAR), and Missing Not at Random (MNAR).
+* **Numerical Imputation**: Median imputation is preferred over mean imputation due to robustness against outliers. Subgroup-level median imputation (e.g., median spend conditional on `membership_tier`) retains group distribution structures.
+* **Categorical Imputation**: Frequent category (mode) imputation or explicit category assignment (e.g., `"Missing"`) to preserve missingness indicators.
+
+### 2.2 Feature Scaling & Encoding
+* **Numerical Scaling**: Distance-based algorithms ($K$-NN) and regularized linear models (Logistic Regression) require zero-mean, unit-variance standardization:
+
+$$z = \frac{x - \mu}{\sigma}$$
+
+Robust Scaling (using median and Interquartile Range) is deployed when continuous variables present extreme outliers.
+* **Categorical Encoding**:
+  * **One-Hot Encoding**: Applied to nominal features without natural order (`bag_color`, `mode_of_transport`). Dummy encoding ($k-1$ categories) is applied for unregularized linear models to prevent exact multicollinearity.
+  * **Ordinal Encoding**: Applied to features with ordinal hierarchy (`membership_tier`: Basic $\rightarrow$ Pro $\rightarrow$ Premium).
+
+### 2.3 Interaction Features & Domain Engineering
+Non-linear feature interactions significantly boost predictive signal:
+* **Composite Ratios**: Ratio metrics such as $\frac{\text{Monthly Spend}}{\text{Store Visits}}$ or interaction terms between complaints and satisfaction scores ($\text{Complaints} \times (1 - \text{Satisfaction})$).
+* **Binned Aggregations**: Discretization of continuous variables into quantile bins to capture step-function risk behaviors.
+
+---
+
+## 3. Class Imbalance Mitigation Methodologies
+
+Imbalanced class distributions bias classifier decision boundaries toward the majority class. Three primary levels of mitigation are reviewed:
+
+### 3.1 Algorithmic Cost-Sensitive Learning
+Modifies model loss functions to penalize misclassifications of the minority class proportionally to class frequencies:
+
+$$w_1 = \frac{N_{\text{total}}}{2 \cdot N_{\text{minority}}}$$
+
+* **Implementation**: Setting `class_weight='balanced'` in Logistic Regression, Decision Trees, and Random Forest models. This approach requires no synthetic data generation and avoids altering true data distributions.
+
+### 3.2 Data-Level Resampling Techniques
+* **Random Undersampling (RUS)**: Downsamples the majority class. Reduces compute time but risks discarding informative samples.
+* **Synthetic Minority Over-sampling Technique (SMOTE)**: Generates synthetic minority instances along line segments joining $k$-nearest neighbors in feature space:
+
+$$\mathbf{x}_{\text{new}} = \mathbf{x}_i + \lambda (\mathbf{x}_{zi} - \mathbf{x}_i), \quad \lambda \sim U(0,1)$$
+
+* **Combined Resampling (SMOTEENN / SMOTETomek)**: Applies SMOTE followed by cleaning techniques (Edited Nearest Neighbors or Tomek Links) to remove overlapping noisy boundary instances.
+* **Methodological Precaution**: Resampling **must only** be performed within cross-validation training folds. Resampling test or validation sets causes catastrophic data leakage.
+
+---
+
+## 4. Evaluation Framework & Metrics Selection
+
+Relying solely on Accuracy in imbalanced classification tasks induces the "Accuracy Paradox," where a naive majority-class classifier achieves high accuracy while failing to identify any churners.
+
+| Metric | Mathematical Definition | Primary Utility & Context |
+| :--- | :--- | :--- |
+| **Accuracy** | $\frac{TP + TN}{TP + TN + FP + FN}$ | Baseline overview; unreliable under class imbalance. |
+| **Precision** | $\frac{TP}{TP + FP}$ | Measures false positive rate; critical when retention interventions are costly. |
+| **Recall (Sensitivity)** | $\frac{TP}{TP + FN}$ | Measures false negative rate; critical when losing a customer incurs high opportunity cost. |
+| **F1-Score** | $2 \cdot \frac{\text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}$ | Harmonic mean balancing Precision and Recall at a fixed 0.5 threshold. |
+| **ROC-AUC** | $\int_0^1 \text{TPR}(\text{FPR}^{-1}(t)) \, dt$ | Measures ranking capability across all classification thresholds; invariant to class distribution changes. |
+| **PR-AUC (Average Precision)** | Area under Precision-Recall curve | Preferred metric for heavily imbalanced datasets; focuses explicitly on minority class performance. |
+
+### 4.1 Decision Threshold Optimization
+Standard prediction defaults to a probability threshold of $\tau = 0.5$. The optimal threshold $\tau^*$ is determined empirically on validation folds by maximizing expected financial utility or maximizing $F_\beta$-score ($\beta > 1$ prioritizing Recall):
+
+$$\tau^* = \arg\max_\tau \left( \text{Gain}(TP(\tau)) - \text{Cost}(FP(\tau)) \right)$$
+
+---
+
+## 5. Software Engineering Best Practices for ML Pipelines
+
+To ensure reproducibility, maintainability, and production readiness, the pipeline implementation adheres to modular software architecture patterns:
+
+1. **Config-Driven Architecture**: Hyperparameters, feature lists, file paths, and seeds are externalized into `src/config.yaml`.
+2. **Global Random Seed Enforcement**: Deterministic reproducibility across modules (`random_state: 42`).
+3. **Data Schema Safeguards**: Automated validation of input columns, types, and value ranges post-ingestion.
+4. **Structured Logging**: Terminal output formatted using explicit ANSI color constants (`GREEN_BOLD = "\033[1;32m"`, `RED_BOLD = "\033[1;31m"`, `CLEAR = "\033[0m"`).
+5. **Artifact Persistence**: Models, preprocessors, evaluation reports, and feature lists are serialized to disk (`.joblib` / `.json`).
+6. **Batch Prediction Interface**: Dedicated entry point capable of loading persisted pipelines to score unseen inference records.
