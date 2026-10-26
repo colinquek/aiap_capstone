@@ -101,6 +101,7 @@ your-repo-name/
     │-- __init__.py
     │-- config.yaml                # Centralized parameters, seeds, paths, and feature grids
     └── preprocessing.py           # Preprocessing pipeline, schema safeguards, & transformers
+```
 
 ## Sprint 4: Baseline Model Development
 
