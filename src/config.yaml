@@ -1,0 +1,29 @@
+raw_data_path: "./data/synthetic_data_204.csv"
+target_column: "customer_churn"
+random_seed: 42
+
+raw_features:
+  - "monthly_spend"
+  - "number_of_store_visits_per_month"
+  - "customer_satisfaction_score"
+  - "number_of_complaints"
+  - "membership_tier"
+  - "discount_usage_rate"
+
+numerical_features:
+  - "monthly_spend"
+  - "number_of_store_visits_per_month"
+  - "customer_satisfaction_score"
+  - "number_of_complaints"
+  - "discount_usage_rate"
+  - "spend_per_visit"
+  - "complaint_dissatisfaction"
+
+ordinal_features:
+  - "membership_tier"
+
+ordinal_categories:
+  - ["Basic", "Pro", "Premium"]
+
+scaling_method: "robust"
+imbalance_handling: "class_weight_balanced"
