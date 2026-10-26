@@ -8,11 +8,11 @@ import joblib
 import pandas as pd
 from src.preprocessing import DataPreprocessingPipeline, GREEN_BOLD, RED_BOLD, CLEAR
 from src.models import BaselineModel
+from src.advanced_models import AdvancedModel
 from sklearn.model_selection import train_test_split
 
 
 def run_pipeline():
-    # Parse CLI argument or fallback to default path
     config_path = (
         sys.argv[1]
         if len(sys.argv) > 1 and sys.argv[1].endswith((".yaml", ".yml"))
@@ -51,7 +51,7 @@ def run_pipeline():
     # Process Target
     X, y = pipeline.process_target(df_raw)
 
-    # Stratified Data Split (Aligned random_seed config key)
+    # Stratified Data Split
     seed = config.get("random_seed", config.get("random_state", 42))
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=seed, stratify=y
@@ -78,29 +78,58 @@ def run_pipeline():
     )
 
     # ---------------------------------------------------------
-    # Sprint 4: Side-by-Side Model Benchmark (Dummy vs Trainable)
+    # Sprint 4: Comprehensive Multi-Model Benchmark
     # ---------------------------------------------------------
-    primary_model_type = config.get("baseline_model_type", "logistic_regression")
-    model_types = ["dummy", primary_model_type]
+    model_candidates = [
+        ("dummy", "baseline", BaselineModel(model_type="dummy", random_state=seed)),
+        (
+            "logistic_regression",
+            "baseline",
+            BaselineModel(model_type="logistic_regression", random_state=seed),
+        ),
+        (
+            "random_forest",
+            "advanced",
+            AdvancedModel(model_type="random_forest", random_state=seed),
+        ),
+        (
+            "gradient_boosting",
+            "advanced",
+            AdvancedModel(model_type="gradient_boosting", random_state=seed),
+        ),
+    ]
 
     benchmark_results = []
+    best_model = None
+    best_f1 = -1.0
+    best_model_name = ""
 
-    for m_type in model_types:
+    print(
+        f"\n{GREEN_BOLD}=== EXECUTING SPRINT 4 COMPREHENSIVE MODEL BENCHMARK ==={CLEAR}"
+    )
+
+    for name, m_category, model_obj in model_candidates:
         print(
-            f"\n{GREEN_BOLD}[INFO] Evaluating Model Strategy: {m_type.upper()}{CLEAR}"
+            f"{GREEN_BOLD}[INFO] Fitting & Evaluating Strategy: {name.upper()} ({m_category.upper()}){CLEAR}"
         )
-        model = BaselineModel(model_type=m_type, random_state=seed)
-        model.fit(X_train_processed, y_train)
+        model_obj.fit(X_train_processed, y_train)
 
-        train_metrics = model.evaluate(X_train_processed, y_train)
-        test_metrics = model.evaluate(X_test_processed, y_test)
+        train_metrics = model_obj.evaluate(X_train_processed, y_train)
+        test_metrics = model_obj.evaluate(X_test_processed, y_test)
+
+        test_f1 = test_metrics.get("f1_score", 0.0) or 0.0
+        if test_f1 > best_f1:
+            best_f1 = test_f1
+            best_model = model_obj
+            best_model_name = name
 
         benchmark_results.append(
             {
-                "Model": m_type,
-                "Test Accuracy": test_metrics.get("accuracy"),
-                "Test Precision": test_metrics.get("precision"),
-                "Test Recall": test_metrics.get("recall"),
+                "Model": name,
+                "Category": m_category,
+                "Test Acc": test_metrics.get("accuracy"),
+                "Test Prec": test_metrics.get("precision"),
+                "Test Rec": test_metrics.get("recall"),
                 "Test F1": test_metrics.get("f1_score"),
                 "Test ROC-AUC": test_metrics.get("roc_auc"),
                 "Test PR-AUC": test_metrics.get("pr_auc"),
@@ -108,17 +137,25 @@ def run_pipeline():
             }
         )
 
-        if m_type == primary_model_type:
-            model_path = "models/baseline_model.joblib"
-            model.save_model(model_path)
-            print(
-                f"{GREEN_BOLD}[INFO] Saved primary baseline model artifact to: {model_path}{CLEAR}"
-            )
+        if name == "logistic_regression":
+            model_obj.save_model("models/baseline_model.joblib")
 
     # Display Side-by-Side Benchmark Summary
-    print(f"\n{GREEN_BOLD}=== SPRINT 4 BASELINE BENCHMARK COMPARISON ==={CLEAR}")
+    print(f"\n{GREEN_BOLD}=== SPRINT 4 COMPREHENSIVE BENCHMARK COMPARISON ==={CLEAR}")
     df_benchmark = pd.DataFrame(benchmark_results)
     print(df_benchmark.to_string(index=False))
+
+    # Save Champion Model Artifact
+    if best_model is not None:
+        champion_path = f"models/champion_{best_model_name}.joblib"
+        best_model.save_model(champion_path)
+        best_model.save_model("models/advanced_model.joblib")
+        print(
+            f"\n{GREEN_BOLD}[CHAMPION] Top Performing Model: {best_model_name.upper()} (F1: {best_f1}){CLEAR}"
+        )
+        print(
+            f"{GREEN_BOLD}[INFO] Saved champion model artifact to: {champion_path}{CLEAR}"
+        )
 
 
 def run_tests():
