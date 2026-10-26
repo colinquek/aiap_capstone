@@ -3,6 +3,7 @@
 import sys
 import os
 import yaml
+import unittest
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from src.preprocessing import DataPreprocessingPipeline, GREEN_BOLD, RED_BOLD, CLEAR
@@ -74,6 +75,17 @@ def run_pipeline():
       f' {X_test_processed.shape}{CLEAR}'
   )
 
+def run_tests():
+    print(f"{GREEN_BOLD}[INFO] Executing Unit Test Suite (tests/)...{CLEAR}")
+    loader = unittest.TestLoader()
+    suite = loader.discover(start_dir='tests')
+    runner = unittest.TextTestRunner(verbosity=2)
+    result = runner.run(suite)
+    
+    if not result.wasSuccessful():
+        print(f"{RED_BOLD}[ERROR] Unit tests failed! Aborting pipeline execution.{CLEAR}")
+        sys.exit(1)
 
 if __name__ == '__main__':
-  run_pipeline()
+  run_tests()  # Run tests first
+  run_pipeline() # Run main pipeline logic
