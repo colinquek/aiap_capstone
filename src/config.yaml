@@ -1,7 +1,13 @@
-raw_data_path: "./data/synthetic_data_204.csv"
-target_column: "customer_churn"
-random_seed: 42
+# Customer Churn Pipeline Configuration
 
+# File Paths
+file_path: "data/synthetic_data_204.csv"
+model_output_dir: "models/"
+
+# Target Column Definition
+target_column: "customer_churn"
+
+# Feature Categorization
 raw_features:
   - "monthly_spend"
   - "number_of_store_visits_per_month"
@@ -25,5 +31,15 @@ ordinal_features:
 ordinal_categories:
   - ["Basic", "Pro", "Premium"]
 
-scaling_method: "robust"
-imbalance_handling: "class_weight_balanced"
+# Data Quality & Cleaning Parameters
+imputation:
+  numerical_strategy: "median"
+  ordinal_strategy: "most_frequent"
+
+outlier_handling:
+  enabled: true
+  iqr_multiplier: 1.5
+
+# Pipeline Parameters
+random_state: 42
+test_size: 0.2
