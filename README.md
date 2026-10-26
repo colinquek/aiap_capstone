@@ -101,3 +101,19 @@ your-repo-name/
     │-- __init__.py
     │-- config.yaml                # Centralized parameters, seeds, paths, and feature grids
     └── preprocessing.py           # Preprocessing pipeline, schema safeguards, & transformers
+
+## Sprint 4: Baseline Model Development
+
+### Benchmarks
+- **Model Type**: Logistic Regression (L2 Penalty)
+- **Evaluation Metrics**:
+
+| Split | Accuracy | Precision | Recall | F1 Score | ROC-AUC |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Train** | 0.82 | 0.78 | 0.75 | 0.76 | 0.86 |
+| **Test** | 0.80 | 0.76 | 0.73 | 0.74 | 0.84 |
+
+### Usage
+Run the baseline model training & evaluation pipeline:
+```bash
+python main.py src/config.yaml

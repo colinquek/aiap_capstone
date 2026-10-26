@@ -1,12 +1,14 @@
-"""main.py - Main Pipeline Orchestrator for Sprint 3."""
+"""main.py - Main Pipeline Orchestrator for Sprint 3 & Sprint 4."""
 
 import sys
 import os
 import yaml
 import unittest
+import joblib
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from src.preprocessing import DataPreprocessingPipeline, GREEN_BOLD, RED_BOLD, CLEAR
+from src.models import BaselineModel
 
 
 def run_pipeline():
@@ -76,6 +78,35 @@ def run_pipeline():
         f"{RED_BOLD}[FINDING] Processed Test Matrix Shape:"
         f" {X_test_processed.shape}{CLEAR}"
     )
+
+    # ---------------------------------------------------------
+    # Sprint 4: Baseline Model Training, Evaluation & Saving
+    # ---------------------------------------------------------
+    os.makedirs("models", exist_ok=True)
+
+    # Save fitted preprocessing pipeline artifact
+    preprocessor_path = "models/preprocessing_pipeline.joblib"
+    joblib.dump(pipeline, preprocessor_path)
+    print(f"{GREEN_BOLD}[INFO] Saved fitted preprocessor to: {preprocessor_path}{CLEAR}")
+
+    # Initialize and fit baseline model
+    model_type = config.get("baseline_model_type", "logistic_regression")
+    baseline_model = BaselineModel(model_type=model_type, random_state=seed)
+    
+    print(f"{GREEN_BOLD}[INFO] Training Baseline Model ({model_type})...{CLEAR}")
+    baseline_model.fit(X_train_processed, y_train)
+
+    # Evaluate model
+    train_metrics = baseline_model.evaluate(X_train_processed, y_train)
+    test_metrics = baseline_model.evaluate(X_test_processed, y_test)
+
+    print(f"{GREEN_BOLD}[INFO] Baseline Train Metrics: {train_metrics}{CLEAR}")
+    print(f"{GREEN_BOLD}[INFO] Baseline Test Metrics: {test_metrics}{CLEAR}")
+
+    # Save trained baseline model artifact
+    model_path = "models/baseline_model.joblib"
+    baseline_model.save_model(model_path)
+    print(f"{GREEN_BOLD}[INFO] Saved baseline model to: {model_path}{CLEAR}")
 
 
 def run_tests():
