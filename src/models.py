@@ -1,7 +1,9 @@
+"""src/models.py - Baseline Model wrappers and evaluation metrics."""
+
 import joblib
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Tuple
+from typing import Dict, Any
 from sklearn.base import BaseEstimator
 from sklearn.linear_model import LogisticRegression
 from sklearn.dummy import DummyClassifier
@@ -11,7 +13,8 @@ from sklearn.metrics import (
     recall_score,
     f1_score,
     roc_auc_score,
-    classification_report,
+    average_precision_score,
+    log_loss,
 )
 
 
@@ -49,19 +52,32 @@ class BaselineModel:
         raise NotImplementedError(f"{self.model_type} does not support predict_proba.")
 
     def evaluate(self, X: np.ndarray, y: pd.Series) -> Dict[str, float]:
-        """Compute standard classification metrics."""
+        """Compute comprehensive classification metrics including imbalanced churn metrics."""
         y_pred = self.predict(X)
 
         metrics = {
-            "accuracy": accuracy_score(y, y_pred),
-            "precision": precision_score(y, y_pred, zero_division=0),
-            "recall": recall_score(y, y_pred, zero_division=0),
-            "f1_score": f1_score(y, y_pred, zero_division=0),
+            "accuracy": round(accuracy_score(y, y_pred), 4),
+            "precision": round(precision_score(y, y_pred, zero_division=0), 4),
+            "recall": round(recall_score(y, y_pred, zero_division=0), 4),
+            "f1_score": round(f1_score(y, y_pred, zero_division=0), 4),
         }
 
         if hasattr(self.model, "predict_proba"):
-            y_proba = self.predict_proba(X)[:, 1]
-            metrics["roc_auc"] = roc_auc_score(y, y_proba)
+            try:
+                y_proba = self.predict_proba(X)
+                # Select positive class probabilities
+                if y_proba.shape[1] > 1:
+                    pos_proba = y_proba[:, 1]
+                else:
+                    pos_proba = y_proba[:, 0]
+
+                metrics["roc_auc"] = round(roc_auc_score(y, pos_proba), 4)
+                metrics["pr_auc"] = round(average_precision_score(y, pos_proba), 4)
+                metrics["log_loss"] = round(log_loss(y, y_proba), 4)
+            except Exception:
+                metrics["roc_auc"] = None
+                metrics["pr_auc"] = None
+                metrics["log_loss"] = None
 
         return metrics
 

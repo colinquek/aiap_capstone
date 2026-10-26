@@ -1,11 +1,18 @@
 # Customer Churn Pipeline Configuration
 
-# File Paths
+# File Paths & Pipeline Data Inputs
 file_path: "data/synthetic_data_204.csv"
+raw_data_path: "data/synthetic_data_204.csv"
 model_output_dir: "models/"
 
 # Target Column Definition
 target_column: "customer_churn"
+
+# Experiment Control Parameters
+random_state: 42
+random_seed: 42
+test_size: 0.2
+baseline_model_type: "logistic_regression"
 
 # Feature Categorization
 raw_features:
@@ -39,7 +46,3 @@ imputation:
 outlier_handling:
   enabled: true
   iqr_multiplier: 1.5
-
-# Pipeline Parameters
-random_state: 42
-test_size: 0.2

@@ -6,9 +6,9 @@ import yaml
 import unittest
 import joblib
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from src.preprocessing import DataPreprocessingPipeline, GREEN_BOLD, RED_BOLD, CLEAR
 from src.models import BaselineModel
+from sklearn.model_selection import train_test_split
 
 
 def run_pipeline():
@@ -36,7 +36,6 @@ def run_pipeline():
     # Ingest Dataset
     data_path = config.get("raw_data_path", "./data/synthetic_data_204.csv")
     if not os.path.exists(data_path):
-        # Fallback check for root dataset
         data_path = "synthetic_data_204.csv"
 
     df_raw = pd.read_csv(data_path)
@@ -52,8 +51,8 @@ def run_pipeline():
     # Process Target
     X, y = pipeline.process_target(df_raw)
 
-    # Stratified Data Split (Preventing Data Leakage)
-    seed = config.get("random_seed", 42)
+    # Stratified Data Split (Aligned random_seed config key)
+    seed = config.get("random_seed", config.get("random_state", 42))
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=seed, stratify=y
     )
@@ -66,47 +65,60 @@ def run_pipeline():
     X_train_processed = pipeline.fit_transform(X_train)
     X_test_processed = pipeline.transform(X_test)
 
-    print(
-        f"{GREEN_BOLD}[INFO] Sprint 3 Preprocessing Pipeline executed"
-        f" successfully!{CLEAR}"
-    )
-    print(
-        f"{RED_BOLD}[FINDING] Processed Training Matrix Shape:"
-        f" {X_train_processed.shape}{CLEAR}"
-    )
-    print(
-        f"{RED_BOLD}[FINDING] Processed Test Matrix Shape:"
-        f" {X_test_processed.shape}{CLEAR}"
-    )
+    print(f"{GREEN_BOLD}[INFO] Preprocessing Pipeline executed successfully!{CLEAR}")
 
     # ---------------------------------------------------------
-    # Sprint 4: Baseline Model Training, Evaluation & Saving
+    # Save Preprocessing Pipeline Artifact
     # ---------------------------------------------------------
     os.makedirs("models", exist_ok=True)
-
-    # Save fitted preprocessing pipeline artifact
     preprocessor_path = "models/preprocessing_pipeline.joblib"
     joblib.dump(pipeline, preprocessor_path)
-    print(f"{GREEN_BOLD}[INFO] Saved fitted preprocessor to: {preprocessor_path}{CLEAR}")
+    print(
+        f"{GREEN_BOLD}[INFO] Saved fitted preprocessor to: {preprocessor_path}{CLEAR}"
+    )
 
-    # Initialize and fit baseline model
-    model_type = config.get("baseline_model_type", "logistic_regression")
-    baseline_model = BaselineModel(model_type=model_type, random_state=seed)
-    
-    print(f"{GREEN_BOLD}[INFO] Training Baseline Model ({model_type})...{CLEAR}")
-    baseline_model.fit(X_train_processed, y_train)
+    # ---------------------------------------------------------
+    # Sprint 4: Side-by-Side Model Benchmark (Dummy vs Trainable)
+    # ---------------------------------------------------------
+    primary_model_type = config.get("baseline_model_type", "logistic_regression")
+    model_types = ["dummy", primary_model_type]
 
-    # Evaluate model
-    train_metrics = baseline_model.evaluate(X_train_processed, y_train)
-    test_metrics = baseline_model.evaluate(X_test_processed, y_test)
+    benchmark_results = []
 
-    print(f"{GREEN_BOLD}[INFO] Baseline Train Metrics: {train_metrics}{CLEAR}")
-    print(f"{GREEN_BOLD}[INFO] Baseline Test Metrics: {test_metrics}{CLEAR}")
+    for m_type in model_types:
+        print(
+            f"\n{GREEN_BOLD}[INFO] Evaluating Model Strategy: {m_type.upper()}{CLEAR}"
+        )
+        model = BaselineModel(model_type=m_type, random_state=seed)
+        model.fit(X_train_processed, y_train)
 
-    # Save trained baseline model artifact
-    model_path = "models/baseline_model.joblib"
-    baseline_model.save_model(model_path)
-    print(f"{GREEN_BOLD}[INFO] Saved baseline model to: {model_path}{CLEAR}")
+        train_metrics = model.evaluate(X_train_processed, y_train)
+        test_metrics = model.evaluate(X_test_processed, y_test)
+
+        benchmark_results.append(
+            {
+                "Model": m_type,
+                "Test Accuracy": test_metrics.get("accuracy"),
+                "Test Precision": test_metrics.get("precision"),
+                "Test Recall": test_metrics.get("recall"),
+                "Test F1": test_metrics.get("f1_score"),
+                "Test ROC-AUC": test_metrics.get("roc_auc"),
+                "Test PR-AUC": test_metrics.get("pr_auc"),
+                "Test LogLoss": test_metrics.get("log_loss"),
+            }
+        )
+
+        if m_type == primary_model_type:
+            model_path = "models/baseline_model.joblib"
+            model.save_model(model_path)
+            print(
+                f"{GREEN_BOLD}[INFO] Saved primary baseline model artifact to: {model_path}{CLEAR}"
+            )
+
+    # Display Side-by-Side Benchmark Summary
+    print(f"\n{GREEN_BOLD}=== SPRINT 4 BASELINE BENCHMARK COMPARISON ==={CLEAR}")
+    df_benchmark = pd.DataFrame(benchmark_results)
+    print(df_benchmark.to_string(index=False))
 
 
 def run_tests():
@@ -124,5 +136,5 @@ def run_tests():
 
 
 if __name__ == "__main__":
-    run_tests()  # Run tests first
-    run_pipeline()  # Run main pipeline logic
+    run_tests()
+    run_pipeline()
