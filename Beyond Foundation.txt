@@ -1,0 +1,61 @@
+Beyond Foundation
+Wrapping it up!
+
+Before we conclude this course, let's recap those foundational building blocks that you have learnt!
+Exploratory Data Analysis (EDA)
+
+EDA is your first conversation with your data! It is not entirely about performing a rigorous analysis, having a spirit of curiosity and exploration is very important. Think of it like meeting someone new: you ask questions, observe their behavior, and try to understand their personality. By leveraging the right techniques to answer the right answers, we can develop a strong understanding for your data, allowing you to make informed decisions about how to clean it, transform it, and ultimately use it to build models that solve real-world problems.
+
+As a general rule of thumb, EDA starts with understanding having a high level understanding of the data, leveraging on basic statistics like determining the mean and range. Then, we clean the data by identifying and addressing missing values and duplicates. Next, we look at each feature individually and in relation to others, using tools like correlation coefficients. Throughout the process, leveraging visual toolings, like bar charts and line plots, to gain better insights from the data.
+Modeling
+
+Just like a craftsman selects the right tool for a specific task, an AI Engineer must carefully choose a model based on the nature of the problem and the desired output. In this course, we covered the field of Regression and Classification. Regression shines when predicting continuous values like housing prices or stock trends, while Classification excels at categorising data into distinct classes, such as spam detection or customer churn prediction.
+
+But choosing a model is just the first step. Evaluating and optimising its performance is like tuning an instrument to achieve the perfect sound. It's through this iterative fine-tuning process of evaluation and optimisation that you can refine your model, ensuring it's not just playing the right notes, but playing them in harmony with your data.
+Real-world production environments
+
+We have emphasised practical skills crucial for production environments. Jupyter Notebooks are excellent for experimentation, but for robust, scalable AI systems, we need to adopt software engineering best practices.
+
+Version Control with Git: Git is a powerful tool for tracking changes in your codebase, collaborating with others, and reverting to previous states if needed. We've shown you how to leverage Git to manage your AI projects effectively, ensuring code integrity and enabling seamless teamwork.
+
+Structured Project Repository: A well-organized project repository is essential for maintainability and scalability. We've taught you how to structure your project's files and folders logically, making it easy to find, modify, and reuse components.
+
+Modular and Reusable Code: We've emphasized the importance of designing code that's modular, repeatable, and reusable. This not only makes your code more organized but also reduces redundancy and simplifies maintenance.
+
+Configuration Files: Configuration files allow you to easily adjust parameters without modifying your core code. We've demonstrated how to use configuration files to make your AI systems flexible and adaptable to different environments or use cases.
+
+Dependency Management: Managing dependencies is crucial to ensure reproducibility and prevent conflicts. We've introduced tools like pip and conda to help you manage your project's software dependencies efficiently.
+
+Documentation with README Files: Clear and comprehensive documentation is essential for understanding and using your AI system. We've stressed the importance of creating a README file that explains your project's purpose, usage, and any relevant details.
+
+By mastering these practical skills, you'll be well-prepared to take your AI projects from the experimental stage to real-world deployment. You'll build systems that are not only accurate and efficient but also reliable, maintainable, and scalable.
+Scoping a good AI problem statement
+
+While EDA and modeling are crucial steps in the AI project lifecycle, making a good AI problem statement is even more important. It's like having a map before you start a journey. A good problem statement tells you exactly what you're trying to solve, making sure it fits with what AI can do, that you have enough data to work with, and that solving the problem will be worth it. This clear AI problem statement helps you look at your data in the right way (EDA) and pick the best models to use. It is like having a guide that keeps you on track, so you don't waste time or get lost. By spending time on a clear problem statement, you can make sure your AI project is successful and useful. To formulate a compelling AI problem statment, you should consider the following key aspects:
+
+Business Challenge
+
+Business Challenge
+
+• Clearly articulate the specific business problem or challenge that you aim to address using AI.
+• Explain how this challenge is currently being tackled and why existing solutions are inadequate.
+• Clearly articulate the specific business problem or challenge that you aim to address using AI.
+
+Proposed Solution
+
+Proposed Solution
+
+• Describe your proposed AI solution in detail.
+• Specify the AI tasks that will be employed to address the challenge.
+• Define what the AI model(s) will predict or achieve.
+• Explain how the AI solution will replace, enhance, or complement existing workflows.
+• Highlight any unique or innovative aspects of your proposed solution.
+• Provide references to relevant research or case studies to support your approach.
+
+Datasets
+
+Datasets
+
+• Identify the data sources that will be used to train and validate the AI model(s).
+• Estimate the volume of data available for each source.
+• Specify whether the data is labeled or unlabeled.
