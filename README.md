@@ -164,3 +164,14 @@ To run the automated unit test suite independently:
 ```bash
 python -m unittest discover -s tests
 ```
+
+
+---
+
+## 8. Sprint 6: Comprehensive Documentation Deliverables
+
+Sprint 6 completes the capstone production readiness with standardized technical documentation stored in `documentation/`:
+
+- **API Documentation (`documentation/API_DOCUMENTATION.md`)**: Complete module interface specifications, method signatures, parameter types, and pipeline usage guides for `preprocessing.py` and `model_optimization.py`.
+- **Model Explanations & Interpretability (`documentation/MODEL_EXPLANATIONS.md`)**: Comprehensive mathematical framing, bias-variance analysis, feature importance ranking (`complaint_dissatisfaction`), and model selection tradeoffs.
+- **Production Deployment Guide (`documentation/DEPLOYMENT_GUIDE.md`)**: Step-by-step instructions for environment setup, artifact loading, batch inference execution, and model drift monitoring.
