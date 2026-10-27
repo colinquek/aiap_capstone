@@ -190,7 +190,9 @@ class DataPreprocessingPipeline:
     def _create_column_transformer(self) -> ColumnTransformer:
         """Creates scikit-learn ColumnTransformer for numerical scaling, imputation, outlier capping, and ordinal encoding."""
         num_cols = self.config.get("numerical_features", [])
-        ord_cols = self.config.get("ordinal_features", [])
+        ord_cols = self.config.get("ordinal_features") or self.config.get(
+            "categorical_features", []
+        )
         ord_categories = self.config.get(
             "ordinal_categories", [["Basic", "Pro", "Premium"]]
         )

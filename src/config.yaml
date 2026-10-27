@@ -1,20 +1,10 @@
-# Customer Churn Pipeline Configuration
+# config.yaml - Configuration file for Machine Learning Pipeline
 
-# File Paths & Pipeline Data Inputs
-file_path: "data/synthetic_data_204.csv"
-raw_data_path: "data/synthetic_data_204.csv"
-model_output_dir: "models/"
-
-# Target Column Definition
+raw_data_path: "./data/synthetic_data_204.csv"
 target_column: "customer_churn"
-
-# Experiment Control Parameters
-random_state: 42
 random_seed: 42
-test_size: 0.2
-baseline_model_type: "logistic_regression"
 
-# Feature Categorization
+# Data Preprocessing Settings
 raw_features:
   - "monthly_spend"
   - "number_of_store_visits_per_month"
@@ -32,17 +22,37 @@ numerical_features:
   - "spend_per_visit"
   - "complaint_dissatisfaction"
 
-ordinal_features:
+categorical_features:
   - "membership_tier"
 
-ordinal_categories:
-  - ["Basic", "Pro", "Premium"]
+imputer_strategy_num: "median"
+imputer_strategy_cat: "most_frequent"
+scaler: "robust"
+outlier_capping: true
+iqr_multiplier: 1.5
 
-# Data Quality & Cleaning Parameters
-imputation:
-  numerical_strategy: "median"
-  ordinal_strategy: "most_frequent"
+# Model Cross-Validation and Hyperparameter Optimization Settings
+cv_folds: 5
+scoring_metric: "f1"
+search_type: "grid" # 'grid' or 'random'
+n_iter_search: 10
 
-outlier_handling:
-  enabled: true
-  iqr_multiplier: 1.5
+# Hyperparameter Grid Settings
+param_grid:
+  logistic_regression:
+    C: [0.01, 0.1, 1.0, 10.0]
+    solver: ["lbfgs"]
+    class_weight: ["balanced", null]
+    max_iter: [1000]
+  random_forest:
+    n_estimators: [50, 100, 200]
+    max_depth: [3, 5, 8, null]
+    min_samples_split: [2, 5, 10]
+    min_samples_leaf: [1, 2, 4]
+    class_weight: ["balanced", "balanced_subsample", null]
+  gradient_boosting:
+    n_estimators: [50, 100, 150]
+    learning_rate: [0.01, 0.05, 0.1, 0.2]
+    max_depth: [3, 5, 7]
+    subsample: [0.8, 1.0]
+    min_samples_split: [2, 5]
