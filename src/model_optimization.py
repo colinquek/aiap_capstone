@@ -12,6 +12,7 @@ from sklearn.model_selection import (
     GridSearchCV,
     RandomizedSearchCV,
     cross_validate,
+    learning_curve,
 )
 from sklearn.metrics import (
     accuracy_score,
@@ -21,12 +22,10 @@ from sklearn.metrics import (
     roc_auc_score,
     average_precision_score,
     log_loss,
-    classification_report,
 )
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 
-# Terminal ANSI Color Constants
 RED_BOLD = "\033[1;31m"
 GREEN_BOLD = "\033[1;32m"
 CLEAR = "\033[0m"
@@ -45,6 +44,7 @@ class ModelOptimizer:
         self.scoring_metric = config.get("scoring_metric", "f1")
         self.search_type = config.get("search_type", "grid")  # 'grid' or 'random'
         self.n_iter_search = config.get("n_iter_search", 10)
+        self.overfitting_threshold = config.get("overfitting_threshold", 0.10)
 
         self.cv_strategy = StratifiedKFold(
             n_splits=self.cv_folds, shuffle=True, random_state=self.random_seed
@@ -59,7 +59,8 @@ class ModelOptimizer:
         return {
             "logistic_regression": {
                 "C": [0.01, 0.1, 1.0, 10.0],
-                                "solver": ["lbfgs"],
+                "penalty": ["l2"],
+                "solver": ["lbfgs"],
                 "class_weight": ["balanced", None],
                 "max_iter": [1000],
             },
@@ -94,8 +95,8 @@ class ModelOptimizer:
 
     def evaluate_cv_baseline(
         self, estimator: Any, X: pd.DataFrame, y: pd.Series
-    ) -> Dict[str, float]:
-        """Runs Stratified K-Fold Cross-Validation on an un-tuned or tuned estimator."""
+    ) -> Dict[str, Any]:
+        """Runs Stratified K-Fold Cross-Validation with explicit generalization gap analysis."""
         scoring = {
             "accuracy": "accuracy",
             "precision": "precision",
@@ -112,15 +113,57 @@ class ModelOptimizer:
             return_train_score=True,
         )
 
+        train_f1 = float(np.mean(cv_results["train_f1"]))
+        val_f1 = float(np.mean(cv_results["test_f1"]))
+        generalization_gap = train_f1 - val_f1
+        is_overfitting = generalization_gap > self.overfitting_threshold
+
+        if is_overfitting:
+            logger.warning(
+                f"{RED_BOLD}[DIAGNOSTIC WARNING] High generalization gap ({generalization_gap:.4f}) "
+                f"exceeds threshold ({self.overfitting_threshold}). Model exhibits potential overfitting.{CLEAR}"
+            )
+
         metrics = {
-            "val_f1_mean": float(np.mean(cv_results["test_f1"])),
+            "val_f1_mean": val_f1,
             "val_f1_std": float(np.std(cv_results["test_f1"])),
             "val_roc_auc_mean": float(np.mean(cv_results["test_roc_auc"])),
             "val_precision_mean": float(np.mean(cv_results["test_precision"])),
             "val_recall_mean": float(np.mean(cv_results["test_recall"])),
-            "train_f1_mean": float(np.mean(cv_results["train_f1"])),
+            "train_f1_mean": train_f1,
+            "generalization_gap": generalization_gap,
+            "overfitting_flag": is_overfitting,
         }
         return metrics
+
+    def generate_learning_curve(
+        self,
+        estimator: Any,
+        X: pd.DataFrame,
+        y: pd.Series,
+        train_sizes: Optional[List[float]] = None,
+    ) -> Dict[str, np.ndarray]:
+        """Computes learning curve metrics to diagnose bias versus variance dynamics."""
+        if train_sizes is None:
+            train_sizes = self.config.get(
+                "learning_curve_train_sizes", [0.2, 0.4, 0.6, 0.8, 1.0]
+            )
+
+        train_sizes_abs, train_scores, test_scores = learning_curve(
+            estimator,
+            X,
+            y,
+            train_sizes=train_sizes,
+            cv=self.cv_strategy,
+            scoring=self.scoring_metric,
+            n_jobs=-1,
+            random_state=self.random_seed,
+        )
+        return {
+            "train_sizes": train_sizes_abs,
+            "train_scores_mean": np.mean(train_scores, axis=1),
+            "val_scores_mean": np.mean(test_scores, axis=1),
+        }
 
     def tune_model(
         self,
@@ -132,7 +175,9 @@ class ModelOptimizer:
         """Executes hyperparameter tuning via GridSearchCV or RandomizedSearchCV."""
         base_estimator = self.instantiate_base_model(model_name)
         if param_grid is None:
-            param_grid = self.get_default_param_grids().get(model_name, {})
+            param_grid = self.config.get("param_grid", {}).get(model_name)
+            if not param_grid:
+                param_grid = self.get_default_param_grids().get(model_name, {})
 
         logger.info(
             f"{GREEN_BOLD}[INFO] Initiating {self.search_type.upper()} search for: {model_name.upper()}{CLEAR}"
@@ -169,14 +214,16 @@ class ModelOptimizer:
         )
         logger.info(f"[PARAMS] {best_params}")
 
-        # Compute full evaluation metrics on best model via Stratified CV
+        # Compute full evaluation metrics & generalization diagnostics on best model via Stratified CV
         cv_eval = self.evaluate_cv_baseline(best_model, X_train, y_train)
+        learning_curve_data = self.generate_learning_curve(best_model, X_train, y_train)
 
         self.search_results[model_name] = {
             "best_estimator": best_model,
             "best_params": best_params,
             "best_cv_score": best_cv_score,
             "cv_eval": cv_eval,
+            "learning_curve": learning_curve_data,
             "search_object": search,
         }
 
@@ -240,6 +287,8 @@ class ModelOptimizer:
                     "CV F1 (Mean)": cv_eval["val_f1_mean"],
                     "CV F1 (Std)": cv_eval["val_f1_std"],
                     "Train F1 (Mean)": cv_eval["train_f1_mean"],
+                    "Gen Gap": cv_eval["generalization_gap"],
+                    "Overfit Alert": cv_eval["overfitting_flag"],
                     "Test Acc": test_metrics["accuracy"],
                     "Test Prec": test_metrics["precision"],
                     "Test Rec": test_metrics["recall"],

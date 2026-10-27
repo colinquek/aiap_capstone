@@ -14,6 +14,8 @@ class TestModelOptimizer(unittest.TestCase):
             "scoring_metric": "f1",
             "search_type": "grid",
             "n_iter_search": 5,
+            "overfitting_threshold": 0.10,
+            "learning_curve_train_sizes": [0.5, 1.0],
         }
         self.optimizer = ModelOptimizer(self.config)
 
@@ -24,9 +26,7 @@ class TestModelOptimizer(unittest.TestCase):
         X_mat = np.random.randn(n_samples, n_features)
         y_arr = np.random.choice([0, 1], size=n_samples, p=[0.7, 0.3])
 
-        self.X_train = pd.DataFrame(
-            X_mat, columns=[f"feat_{i}" for i in range(n_features)]
-        )
+        self.X_train = pd.DataFrame(X_mat, columns=[f"feat_{i}" for i in range(n_features)])
         self.y_train = pd.Series(y_arr, name="target")
 
         self.X_test = self.X_train.copy()
@@ -48,6 +48,25 @@ class TestModelOptimizer(unittest.TestCase):
         )
         self.assertIsNotNone(best_model)
         self.assertIn("C", best_params)
+
+    def test_generalization_diagnostics(self):
+        param_grid = {"C": [1.0], "max_iter": [500]}
+        best_model, _ = self.optimizer.tune_model(
+            "logistic_regression", self.X_train, self.y_train, param_grid=param_grid
+        )
+        eval_dict = self.optimizer.evaluate_cv_baseline(best_model, self.X_train, self.y_train)
+        self.assertIn("generalization_gap", eval_dict)
+        self.assertIn("overfitting_flag", eval_dict)
+
+    def test_learning_curve(self):
+        param_grid = {"C": [1.0], "max_iter": [500]}
+        best_model, _ = self.optimizer.tune_model(
+            "logistic_regression", self.X_train, self.y_train, param_grid=param_grid
+        )
+        lc_data = self.optimizer.generate_learning_curve(best_model, self.X_train, self.y_train)
+        self.assertIn("train_sizes", lc_data)
+        self.assertIn("train_scores_mean", lc_data)
+        self.assertIn("val_scores_mean", lc_data)
 
     def test_evaluate_test_set(self):
         param_grid = {"C": [1.0], "max_iter": [500]}

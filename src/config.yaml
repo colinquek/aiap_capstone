@@ -31,28 +31,31 @@ scaler: "robust"
 outlier_capping: true
 iqr_multiplier: 1.5
 
-# Model Cross-Validation and Hyperparameter Optimization Settings
+# Model Cross-Validation, Optimization & Diagnostics Settings
 cv_folds: 5
 scoring_metric: "f1"
 search_type: "grid" # 'grid' or 'random'
 n_iter_search: 10
+overfitting_threshold: 0.10 # Max allowed generalization gap (Train F1 - Val F1)
+learning_curve_train_sizes: [0.2, 0.4, 0.6, 0.8, 1.0]
 
-# Hyperparameter Grid Settings
+# Hyperparameter Grid Settings with Structural Intent Annotations
 param_grid:
   logistic_regression:
-    C: [0.01, 0.1, 1.0, 10.0]
+    C: [0.01, 0.1, 1.0, 10.0] # Controls inverse regularization strength; smaller C increases penalty to reduce overfitting
+    penalty: ["l2"]
     solver: ["lbfgs"]
-    class_weight: ["balanced", null]
+    class_weight: ["balanced", null] # Adjusts weights inversely proportional to class frequencies to handle target imbalance
     max_iter: [1000]
   random_forest:
-    n_estimators: [50, 100, 200]
-    max_depth: [3, 5, 8, null]
-    min_samples_split: [2, 5, 10]
-    min_samples_leaf: [1, 2, 4]
+    n_estimators: [50, 100, 200] # Number of ensemble trees to stabilize variance
+    max_depth: [3, 5, 8, null] # Caps individual tree depth to limit variance and prevent overfitting
+    min_samples_split: [2, 5, 10] # Prevents splits on noisy micro-segment nodes
+    min_samples_leaf: [1, 2, 4] # Guarantees minimum leaf support to improve generalization
     class_weight: ["balanced", "balanced_subsample", null]
   gradient_boosting:
     n_estimators: [50, 100, 150]
-    learning_rate: [0.01, 0.05, 0.1, 0.2]
-    max_depth: [3, 5, 7]
-    subsample: [0.8, 1.0]
+    learning_rate: [0.01, 0.05, 0.1, 0.2] # Shrinkage parameter balancing learning speed vs overfit risk
+    max_depth: [3, 5, 7] # Limits individual boosting tree complexity
+    subsample: [0.8, 1.0] # Stochastic subsampling of rows to reduce model variance
     min_samples_split: [2, 5]
