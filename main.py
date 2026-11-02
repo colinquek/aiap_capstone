@@ -6,6 +6,7 @@ import yaml
 import unittest
 import joblib
 import pandas as pd
+from copy import deepcopy
 from src.preprocessing import DataPreprocessingPipeline, GREEN_BOLD, RED_BOLD, CLEAR
 from src.models import BaselineModel
 from src.advanced_models import AdvancedModel
@@ -76,20 +77,100 @@ def run_pipeline():
 
     # ---------------------------------------------------------
     # Sprint 5: Model Optimization & Hyperparameter Tuning
+    # Variants (all on the SAME 80/20 split) to isolate the value of each
+    # pipeline stage:
+    #   A: full pipeline (source cleaning + engineered features + selection)
+    #   B: no engineered features (raw numerics only, identity feature step)
+    #   C: no feature selection (full feature matrix, SelectKBest disabled)
     # ---------------------------------------------------------
+    from sklearn.pipeline import Pipeline as _SkPipeline
+    from sklearn.preprocessing import FunctionTransformer as _IdentityTransformer
+
     print(
         f"\n{GREEN_BOLD}=== EXECUTING SPRINT 5 MODEL HYPERPARAMETER TUNING & CROSS-VALIDATION ==={CLEAR}"
     )
-    optimizer = ModelOptimizer(config)
-    summary_df = optimizer.optimize_all_models(
-        X_train_processed, y_train, X_test_processed, y_test
+
+    def _build_variant(variant_id):
+        """Build and fit the preprocessing pipeline for one comparison variant."""
+        variant_config = deepcopy(config)
+        if variant_id == "B":
+            # No engineered features: only raw numerics, and the feature
+            # engineering step becomes a no-op passthrough (so the derived
+            # columns do not leak in as raw passthrough columns).
+            derived = pipeline.derived_features
+            variant_config["numerical_features"] = [
+                col for col in variant_config.get("numerical_features", [])
+                if col not in derived
+            ]
+        elif variant_id == "C":
+            # No feature selection: keep the full feature matrix.
+            variant_config["feature_selection"]["enabled"] = False
+
+        variant_pipe = DataPreprocessingPipeline(variant_config)
+        if variant_id == "B":
+            variant_pipe.feature_engineering_pipeline = _SkPipeline(
+                [("identity", _IdentityTransformer())]
+            )
+        Xv, yv = variant_pipe.process_target(df_raw)
+        Xv_train, Xv_test, yv_train, yv_test = train_test_split(
+            Xv, yv, test_size=0.2, random_state=seed, stratify=yv
+        )
+        Xv_train = variant_pipe.fit_transform(Xv_train, yv_train)
+        Xv_test = variant_pipe.transform(Xv_test)
+        print(
+            f"{GREEN_BOLD}[INFO] Variant {variant_id}: "
+            f"train shape {Xv_train.shape}, test shape {Xv_test.shape}{CLEAR}"
+        )
+        return Xv_train, Xv_test, yv_train, yv_test
+
+    variant_rows = []
+    for variant_id, variant_desc in [
+        ("A", "full pipeline: cleaning + engineered features + selection"),
+        ("B", "no engineered features (raw numerics only)"),
+        ("C", "no feature selection (all features kept)"),
+    ]:
+        print(
+            f"\n{GREEN_BOLD}{'=' * 70}\n"
+            f"=== VARIANT {variant_id}: {variant_desc.upper()} ===\n"
+            f"{'=' * 70}{CLEAR}"
+        )
+        Xv_train, Xv_test, yv_train, yv_test = _build_variant(variant_id)
+        optimizer = ModelOptimizer(config)
+        summary_df = optimizer.optimize_all_models(
+            Xv_train, yv_train, Xv_test, yv_test
+        )
+        print(f"\n=== VARIANT {variant_id} BENCHMARK SUMMARY ===\n")
+        print(summary_df.to_string(index=False))
+        for _, row in summary_df.iterrows():
+            variant_rows.append(
+                {
+                    "Variant": variant_id,
+                    "Model": row["Model"],
+                    "Best CV F1": row["Best CV F1"],
+                    "Test F1": row["Test F1"],
+                }
+            )
+        if variant_id == "A":
+            champion_optimizer = optimizer
+            summary_a_df = summary_df
+
+    # Displaying the comprehensive benchmark summary (variant A: full pipeline)
+    print(f"\n{GREEN_BOLD}=== SPRINT 5 COMPREHENSIVE BENCHMARK SUMMARY (VARIANT A) ==={CLEAR}")
+    print(summary_a_df.to_string(index=False))
+
+    # Combined variant comparison (test F1 on the same 80/20 split)
+    comparison_df = pd.DataFrame(variant_rows).pivot(
+        index="Model", columns="Variant", values="Test F1"
     )
+    comparison_df.columns = [f"Variant {c}" for c in comparison_df.columns]
+    comparison_df = comparison_df.reindex(
+        ["logistic_regression", "random_forest", "gradient_boosting"]
+    )
+    print(f"\n{GREEN_BOLD}=== VARIANT COMPARISON (TEST F1, SAME 80/20 SPLIT) ==={CLEAR}\n")
+    print(comparison_df.to_string())
 
-    print(f"\n{GREEN_BOLD}=== SPRINT 5 COMPREHENSIVE BENCHMARK SUMMARY ==={CLEAR}")
-    print(summary_df.to_string(index=False))
-
-    # Save Champion Model Artifact
-    optimizer.save_champion_model("models/champion_model.joblib")
+    # Save Champion Model Artifact (variant A: full pipeline)
+    champion_optimizer.save_champion_model("models/champion_model.joblib")
 
 
 def run_tests():

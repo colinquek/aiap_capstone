@@ -14,13 +14,20 @@ raw_features:
   - "discount_usage_rate"
 
 numerical_features:
+  # Raw numeric source columns (imputed + capped before feature engineering)
   - "monthly_spend"
   - "number_of_store_visits_per_month"
   - "customer_satisfaction_score"
   - "number_of_complaints"
   - "discount_usage_rate"
+  # Engineered features (computed on the cleaned source matrix)
   - "spend_per_visit"
   - "complaint_dissatisfaction"
+  - "complaint_risk_band"
+  - "visits_risk_band"
+  - "discount_dependency"
+  - "high_discount_flag"
+  - "value_tier_mismatch"
 
 categorical_features:
   - "membership_tier"
@@ -66,4 +73,11 @@ param_grid:
 feature_selection:
   enabled: true
   method: "mutual_info_classif"
+  # k=5 balances predictive signal vs overfitting risk on the 800-row training set:
+  # a wider selection lets weak/noisy engineered features drive splits, while a
+  # narrower one discards real signal (e.g. tier, discount_dependency).
   k_best: 5
+  # Drop near-collinear duplicates (|corr| >= threshold) BEFORE SelectKBest so the
+  # k budget goes to diverse signals instead of correlated twins.
+  redundancy_filter: true
+  redundancy_threshold: 0.90
