@@ -1,8 +1,10 @@
 """src/feature_engineering.py - Feature engineering & selection module."""
 
+from functools import partial
+
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.feature_selection import SelectKBest, mutual_info_classif
+from sklearn.feature_selection import SelectKBest, chi2, f_classif, mutual_info_classif
 
 
 class SpendPerVisitTransformer(BaseEstimator, TransformerMixin):
@@ -57,18 +59,32 @@ class ComplaintDissatisfactionTransformer(BaseEstimator, TransformerMixin):
 class FeatureSelector(BaseEstimator, TransformerMixin):
     """Target-aware feature selection transformer using SelectKBest."""
 
-    def __init__(self, k: int = 10, enabled: bool = True):
+    def __init__(self, k: int = 10, enabled: bool = True, method: str = "mutual_info_classif", random_state: int = 42):
         self.k = k
         self.enabled = enabled
-        self.selector = (
-            SelectKBest(score_func=mutual_info_classif, k=self.k) if enabled else None
-        )
+        self.method = method
+        self.random_state = random_state
+        score_func = self._resolve_score_func()
+        self.selector = SelectKBest(score_func=score_func, k=self.k) if enabled else None
+
+    def _resolve_score_func(self):
+        if self.method == "mutual_info_classif":
+            return partial(mutual_info_classif, random_state=self.random_state)
+        if self.method == "f_classif":
+            return f_classif
+        if self.method == "chi2":
+            return chi2
+        raise ValueError(f"Unsupported feature selection method: {self.method}")
 
     def fit(self, X, y=None):
         if self.enabled and self.selector is not None:
             if y is None:
                 raise ValueError("Target 'y' is required to fit FeatureSelector.")
             self.selector.fit(X, y)
+        if not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X)
+        kept = X.columns[self.selector.get_support()]
+        print(f"[INFO] Selected features: {list(kept)}")
         return self
 
     def transform(self, X):

@@ -9,7 +9,7 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OrdinalEncoder, RobustScaler
+from sklearn.preprocessing import OneHotEncoder, PowerTransformer, RobustScaler
 
 # Import refactored feature engineering logic
 from src.feature_engineering import (
@@ -81,6 +81,8 @@ class DataPreprocessingPipeline:
         self.feature_selector = FeatureSelector(
             k=fs_config.get("k_best", self.config.get("top_k_features", 10)),
             enabled=fs_config.get("enabled", True),
+            method=fs_config.get("method", "mutual_info_classif"),
+            random_state=self.config.get("random_seed", 42),
         )
         self.is_fitted = False
 
@@ -151,15 +153,11 @@ class DataPreprocessingPipeline:
         return X, y
 
     def _create_column_transformer(self) -> ColumnTransformer:
-        """Creates scikit-learn ColumnTransformer for numerical scaling, imputation, outlier capping, and ordinal encoding."""
+        """Creates scikit-learn ColumnTransformer for numerical scaling, imputation, outlier capping, and one-hot encoding of tiers."""
         num_cols = self.config.get("numerical_features", [])
         ord_cols = self.config.get("ordinal_features") or self.config.get(
             "categorical_features", []
         )
-        ord_categories = self.config.get(
-            "ordinal_categories", [["Basic", "Pro", "Premium"]]
-        )
-
         impute_config = self.config.get("imputation", {})
         num_impute_strategy = impute_config.get("numerical_strategy", "median")
         ord_impute_strategy = impute_config.get("ordinal_strategy", "most_frequent")
@@ -168,29 +166,28 @@ class DataPreprocessingPipeline:
         outlier_enabled = outlier_config.get("enabled", True)
         iqr_multiplier = outlier_config.get("iqr_multiplier", 1.5)
 
-        num_transformer = Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy=num_impute_strategy)),
-                (
-                    "capper",
-                    OutlierCapper(
-                        iqr_multiplier=iqr_multiplier, enabled=outlier_enabled
-                    ),
+        num_steps = [
+            ("imputer", SimpleImputer(strategy=num_impute_strategy)),
+            (
+                "capper",
+                OutlierCapper(
+                    iqr_multiplier=iqr_multiplier, enabled=outlier_enabled
                 ),
-                ("scaler", RobustScaler()),
-            ]
-        )
+            ),
+        ]
+        if self.config.get("transformation", {}).get("skew", "none") == "power":
+            num_steps.append(
+                ("skew", PowerTransformer(standardize=False))
+            )
+        num_steps.append(("scaler", RobustScaler()))
+        num_transformer = Pipeline(steps=num_steps)
 
         ord_transformer = Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy=ord_impute_strategy)),
                 (
-                    "ordinal",
-                    OrdinalEncoder(
-                        categories=ord_categories,
-                        handle_unknown="use_encoded_value",
-                        unknown_value=-1,
-                    ),
+                    "onehot",
+                    OneHotEncoder(handle_unknown="ignore", sparse_output=False),
                 ),
             ]
         )

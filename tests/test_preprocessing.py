@@ -27,7 +27,6 @@ class TestPreprocessing(unittest.TestCase):
                 "complaint_dissatisfaction",
             ],
             "ordinal_features": ["membership_tier"],
-            "ordinal_categories": [["Basic", "Pro", "Premium"]],
             "imputation": {
                 "numerical_strategy": "median",
                 "ordinal_strategy": "most_frequent",

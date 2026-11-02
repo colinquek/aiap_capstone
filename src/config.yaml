@@ -25,11 +25,14 @@ numerical_features:
 categorical_features:
   - "membership_tier"
 
-imputer_strategy_num: "median"
-imputer_strategy_cat: "most_frequent"
-scaler: "robust"
-outlier_capping: true
-iqr_multiplier: 1.5
+imputation:
+  numerical_strategy: "median"
+  ordinal_strategy: "most_frequent"
+outlier_handling:
+  enabled: true
+  iqr_multiplier: 1.5
+transformation:
+  skew: "power" # PowerTransformer (Yeo-Johnson) for skewed numerics
 
 # Model Cross-Validation, Optimization & Diagnostics Settings
 cv_folds: 5
