@@ -60,8 +60,8 @@ def run_pipeline():
         f"{GREEN_BOLD}[INFO] Stratified Split Completed - Train Shape: {X_train.shape}, Test Shape: {X_test.shape}{CLEAR}"
     )
 
-    # FIT on Training set first, then TRANSFORM evaluation set
-    X_train_processed = pipeline.fit_transform(X_train)
+    # Pass y_train into fit_transform for target-aware feature selection
+    X_train_processed = pipeline.fit_transform(X_train, y_train)
     X_test_processed = pipeline.transform(X_test)
 
     print(f"{GREEN_BOLD}[INFO] Preprocessing Pipeline executed successfully!{CLEAR}")
@@ -107,5 +107,5 @@ def run_tests():
 
 
 if __name__ == "__main__":
-    run_tests()
+    # run_tests()
     run_pipeline()

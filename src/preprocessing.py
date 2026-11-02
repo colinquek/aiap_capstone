@@ -11,62 +11,19 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder, RobustScaler
 
-# Terminal ANSI Color Constants
+# Import refactored feature engineering logic
+from src.feature_engineering import (
+    SpendPerVisitTransformer,
+    ComplaintDissatisfactionTransformer,
+    FeatureSelector,
+)
+
 RED_BOLD = "\033[1;31m"
 GREEN_BOLD = "\033[1;32m"
 CLEAR = "\033[0m"
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("preprocessing")
-
-
-class SpendPerVisitTransformer(BaseEstimator, TransformerMixin):
-    """Custom transformer calculating spend per store visit feature."""
-
-    def __init__(self, eps: float = 1e-5):
-        self.eps = eps
-
-    def fit(self, X: pd.DataFrame, y=None):
-        return self
-
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        X_out = X.copy()
-        if (
-            "monthly_spend" in X_out.columns
-            and "number_of_store_visits_per_month" in X_out.columns
-        ):
-            X_out["spend_per_visit"] = X_out["monthly_spend"] / (
-                X_out["number_of_store_visits_per_month"] + self.eps
-            )
-        return X_out
-
-    def __sklearn_tags__(self):
-        tags = super().__sklearn_tags__()
-        tags.requires_fit = False
-        return tags
-
-
-class ComplaintDissatisfactionTransformer(BaseEstimator, TransformerMixin):
-    """Custom transformer calculating complaint x dissatisfaction feature."""
-
-    def fit(self, X: pd.DataFrame, y=None):
-        return self
-
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        X_out = X.copy()
-        if (
-            "number_of_complaints" in X_out.columns
-            and "customer_satisfaction_score" in X_out.columns
-        ):
-            X_out["complaint_dissatisfaction"] = X_out["number_of_complaints"] * (
-                1.0 - X_out["customer_satisfaction_score"]
-            )
-        return X_out
-
-    def __sklearn_tags__(self):
-        tags = super().__sklearn_tags__()
-        tags.requires_fit = False
-        return tags
 
 
 class OutlierCapper(BaseEstimator, TransformerMixin):
@@ -105,7 +62,7 @@ class OutlierCapper(BaseEstimator, TransformerMixin):
 
 
 class DataPreprocessingPipeline:
-    """Preprocessing pipeline encapsulating validation, target encoding, feature engineering, scaling, and encoding."""
+    """Preprocessing pipeline encapsulating validation, target encoding, feature engineering, scaling, and feature selection."""
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -119,6 +76,12 @@ class DataPreprocessingPipeline:
             ]
         )
         self.column_transformer = self._create_column_transformer()
+
+        fs_config = self.config.get("feature_selection", {})
+        self.feature_selector = FeatureSelector(
+            k=fs_config.get("k_best", self.config.get("top_k_features", 10)),
+            enabled=fs_config.get("enabled", True),
+        )
         self.is_fitted = False
 
     def audit_raw_missingness(self, df: pd.DataFrame) -> pd.Series:
@@ -241,17 +204,22 @@ class DataPreprocessingPipeline:
             n_jobs=-1,
         )
 
-    def fit_transform(self, X: pd.DataFrame) -> np.ndarray:
-        """Fits feature engineering and ColumnTransformer pipelines on training data."""
+    def fit_transform(self, X: pd.DataFrame, y: pd.Series = None) -> np.ndarray:
+        """Fits feature engineering, ColumnTransformer, and FeatureSelector pipelines on training data."""
         logger.info(
             f"{GREEN_BOLD}[INFO] Executing Feature Engineering Pipeline...{CLEAR}"
         )
-        X_fe = self.feature_engineering_pipeline.fit_transform(X)
+        X_fe = self.feature_engineering_pipeline.fit_transform(X, y)
         logger.info(
             f"{GREEN_BOLD}[INFO] Fitting ColumnTransformer on training matrix"
             f" (Shape: {X_fe.shape})...{CLEAR}"
         )
-        X_trans = self.column_transformer.fit_transform(X_fe)
+        X_trans = self.column_transformer.fit_transform(X_fe, y)
+
+        if self.feature_selector.enabled:
+            logger.info(f"{GREEN_BOLD}[INFO] Executing Feature Selection...{CLEAR}")
+            X_trans = self.feature_selector.fit_transform(X_trans, y)
+
         self.is_fitted = True
         logger.info(
             f"{GREEN_BOLD}[INFO] Transformation complete. Shape:"
@@ -271,4 +239,9 @@ class DataPreprocessingPipeline:
                 " data first."
             )
         X_fe = self.feature_engineering_pipeline.transform(X)
-        return self.column_transformer.transform(X_fe)
+        X_trans = self.column_transformer.transform(X_fe)
+
+        if self.feature_selector.enabled:
+            X_trans = self.feature_selector.transform(X_trans)
+
+        return X_trans

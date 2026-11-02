@@ -59,3 +59,8 @@ param_grid:
     max_depth: [3, 5, 7] # Limits individual boosting tree complexity
     subsample: [0.8, 1.0] # Stochastic subsampling of rows to reduce model variance
     min_samples_split: [2, 5]
+
+feature_selection:
+  enabled: true
+  method: "mutual_info_classif"
+  k_best: 5

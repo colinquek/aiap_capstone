@@ -66,7 +66,7 @@ class TestPreprocessing(unittest.TestCase):
     def test_missing_value_imputation_and_capping(self):
         pipeline = DataPreprocessingPipeline(self.config)
         X, _ = pipeline.process_target(self.raw_data)
-        X_trans = pipeline.fit_transform(X)
+        X_trans = pipeline.fit_transform(X, y)
         self.assertFalse(np.isnan(X_trans).any())
         self.assertEqual(X_trans.shape[0], 5)
 
