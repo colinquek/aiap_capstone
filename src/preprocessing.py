@@ -9,64 +9,21 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OrdinalEncoder, RobustScaler
+from sklearn.preprocessing import OneHotEncoder, PowerTransformer, RobustScaler
 
-# Terminal ANSI Color Constants
+# Import refactored feature engineering logic
+from src.feature_engineering import (
+    SpendPerVisitTransformer,
+    ComplaintDissatisfactionTransformer,
+    FeatureSelector,
+)
+
 RED_BOLD = "\033[1;31m"
 GREEN_BOLD = "\033[1;32m"
 CLEAR = "\033[0m"
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("preprocessing")
-
-
-class SpendPerVisitTransformer(BaseEstimator, TransformerMixin):
-    """Custom transformer calculating spend per store visit feature."""
-
-    def __init__(self, eps: float = 1e-5):
-        self.eps = eps
-
-    def fit(self, X: pd.DataFrame, y=None):
-        return self
-
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        X_out = X.copy()
-        if (
-            "monthly_spend" in X_out.columns
-            and "number_of_store_visits_per_month" in X_out.columns
-        ):
-            X_out["spend_per_visit"] = X_out["monthly_spend"] / (
-                X_out["number_of_store_visits_per_month"] + self.eps
-            )
-        return X_out
-
-    def __sklearn_tags__(self):
-        tags = super().__sklearn_tags__()
-        tags.requires_fit = False
-        return tags
-
-
-class ComplaintDissatisfactionTransformer(BaseEstimator, TransformerMixin):
-    """Custom transformer calculating complaint x dissatisfaction feature."""
-
-    def fit(self, X: pd.DataFrame, y=None):
-        return self
-
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        X_out = X.copy()
-        if (
-            "number_of_complaints" in X_out.columns
-            and "customer_satisfaction_score" in X_out.columns
-        ):
-            X_out["complaint_dissatisfaction"] = X_out["number_of_complaints"] * (
-                1.0 - X_out["customer_satisfaction_score"]
-            )
-        return X_out
-
-    def __sklearn_tags__(self):
-        tags = super().__sklearn_tags__()
-        tags.requires_fit = False
-        return tags
 
 
 class OutlierCapper(BaseEstimator, TransformerMixin):
@@ -105,7 +62,7 @@ class OutlierCapper(BaseEstimator, TransformerMixin):
 
 
 class DataPreprocessingPipeline:
-    """Preprocessing pipeline encapsulating validation, target encoding, feature engineering, scaling, and encoding."""
+    """Preprocessing pipeline encapsulating validation, target encoding, feature engineering, scaling, and feature selection."""
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -119,6 +76,14 @@ class DataPreprocessingPipeline:
             ]
         )
         self.column_transformer = self._create_column_transformer()
+
+        fs_config = self.config.get("feature_selection", {})
+        self.feature_selector = FeatureSelector(
+            k=fs_config.get("k_best", self.config.get("top_k_features", 10)),
+            enabled=fs_config.get("enabled", True),
+            method=fs_config.get("method", "mutual_info_classif"),
+            random_state=self.config.get("random_seed", 42),
+        )
         self.is_fitted = False
 
     def audit_raw_missingness(self, df: pd.DataFrame) -> pd.Series:
@@ -188,15 +153,11 @@ class DataPreprocessingPipeline:
         return X, y
 
     def _create_column_transformer(self) -> ColumnTransformer:
-        """Creates scikit-learn ColumnTransformer for numerical scaling, imputation, outlier capping, and ordinal encoding."""
+        """Creates scikit-learn ColumnTransformer for numerical scaling, imputation, outlier capping, and one-hot encoding of tiers."""
         num_cols = self.config.get("numerical_features", [])
         ord_cols = self.config.get("ordinal_features") or self.config.get(
             "categorical_features", []
         )
-        ord_categories = self.config.get(
-            "ordinal_categories", [["Basic", "Pro", "Premium"]]
-        )
-
         impute_config = self.config.get("imputation", {})
         num_impute_strategy = impute_config.get("numerical_strategy", "median")
         ord_impute_strategy = impute_config.get("ordinal_strategy", "most_frequent")
@@ -205,29 +166,28 @@ class DataPreprocessingPipeline:
         outlier_enabled = outlier_config.get("enabled", True)
         iqr_multiplier = outlier_config.get("iqr_multiplier", 1.5)
 
-        num_transformer = Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy=num_impute_strategy)),
-                (
-                    "capper",
-                    OutlierCapper(
-                        iqr_multiplier=iqr_multiplier, enabled=outlier_enabled
-                    ),
+        num_steps = [
+            ("imputer", SimpleImputer(strategy=num_impute_strategy)),
+            (
+                "capper",
+                OutlierCapper(
+                    iqr_multiplier=iqr_multiplier, enabled=outlier_enabled
                 ),
-                ("scaler", RobustScaler()),
-            ]
-        )
+            ),
+        ]
+        if self.config.get("transformation", {}).get("skew", "none") == "power":
+            num_steps.append(
+                ("skew", PowerTransformer(standardize=False))
+            )
+        num_steps.append(("scaler", RobustScaler()))
+        num_transformer = Pipeline(steps=num_steps)
 
         ord_transformer = Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy=ord_impute_strategy)),
                 (
-                    "ordinal",
-                    OrdinalEncoder(
-                        categories=ord_categories,
-                        handle_unknown="use_encoded_value",
-                        unknown_value=-1,
-                    ),
+                    "onehot",
+                    OneHotEncoder(handle_unknown="ignore", sparse_output=False),
                 ),
             ]
         )
@@ -241,17 +201,22 @@ class DataPreprocessingPipeline:
             n_jobs=-1,
         )
 
-    def fit_transform(self, X: pd.DataFrame) -> np.ndarray:
-        """Fits feature engineering and ColumnTransformer pipelines on training data."""
+    def fit_transform(self, X: pd.DataFrame, y: pd.Series = None) -> np.ndarray:
+        """Fits feature engineering, ColumnTransformer, and FeatureSelector pipelines on training data."""
         logger.info(
             f"{GREEN_BOLD}[INFO] Executing Feature Engineering Pipeline...{CLEAR}"
         )
-        X_fe = self.feature_engineering_pipeline.fit_transform(X)
+        X_fe = self.feature_engineering_pipeline.fit_transform(X, y)
         logger.info(
             f"{GREEN_BOLD}[INFO] Fitting ColumnTransformer on training matrix"
             f" (Shape: {X_fe.shape})...{CLEAR}"
         )
-        X_trans = self.column_transformer.fit_transform(X_fe)
+        X_trans = self.column_transformer.fit_transform(X_fe, y)
+
+        if self.feature_selector.enabled:
+            logger.info(f"{GREEN_BOLD}[INFO] Executing Feature Selection...{CLEAR}")
+            X_trans = self.feature_selector.fit_transform(X_trans, y)
+
         self.is_fitted = True
         logger.info(
             f"{GREEN_BOLD}[INFO] Transformation complete. Shape:"
@@ -271,4 +236,9 @@ class DataPreprocessingPipeline:
                 " data first."
             )
         X_fe = self.feature_engineering_pipeline.transform(X)
-        return self.column_transformer.transform(X_fe)
+        X_trans = self.column_transformer.transform(X_fe)
+
+        if self.feature_selector.enabled:
+            X_trans = self.feature_selector.transform(X_trans)
+
+        return X_trans

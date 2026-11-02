@@ -95,6 +95,7 @@ aiap_capstone/
 ├── src/
 │   ├── __init__.py
 │   ├── config.yaml                    # Central configuration parameters
+│   ├── feature_engineering.py         # Custom transformers & FeatureSelector
 │   ├── preprocessing.py               # DataPreprocessingPipeline module
 │   ├── models.py                      # BaselineModel wrapper class
 │   ├── advanced_models.py             # AdvancedModel ensemble wrapper class
@@ -114,8 +115,17 @@ aiap_capstone/
 
 ### Sprint 3: Preprocessing & Schema Validation
 * **Data Auditing**: Raw missing value auditing, outlier capping using Interquartile Range ($1.5 \times \text{IQR}$), and explicit schema verification.
-* **Feature Engineering**: Custom transformers calculating `spend_per_visit` and `complaint_dissatisfaction`.
-* **Scaling & Encoding**: Ordinal encoding for categorical tiers (`membership_tier`) and robust scaling (`RobustScaler`) for continuous numerical features.
+* **Feature Engineering**: Custom transformers calculating `spend_per_visit` and `complaint_dissatisfaction` (see `src/feature_engineering.py` below).
+* **Skew Transformation**: Optional `PowerTransformer` (Yeo-Johnson) applied to numerical features when `transformation.skew: "power"` is set in `config.yaml`; disabled by default (`"none"`).
+* **Scaling & Encoding**: Robust scaling (`RobustScaler`) for continuous numerical features; one-hot encoding for categorical tiers (`membership_tier`) — tier churn is non-monotonic (Basic > Premium > Pro), so ordinal encoding would impose a false ordering.
+* **Feature Selection**: Seeded `SelectKBest` wrapper (see below) ranks the full engineered feature set and keeps the top `feature_selection.k_best` features.
+
+#### `src/feature_engineering.py` — Custom Transformers & Feature Selection
+* **`SpendPerVisitTransformer`**: Derives `spend_per_visit = monthly_spend / (visits + ε)`. Stateless (`requires_fit=False`).
+* **`ComplaintDissatisfactionTransformer`**: Derives `complaint_dissatisfaction = number_of_complaints × (1 − customer_satisfaction_score)`. Stateless (`requires_fit=False`).
+* **`FeatureSelector`**: Target-aware wrapper around `SelectKBest` that plugs into the pipeline like any transformer.
+  - **Config knobs** (from `config.yaml`): `feature_selection.enabled` (default `true`), `feature_selection.method` (`mutual_info_classif` | `f_classif` | `chi2`; default `mutual_info_classif`), `feature_selection.k_best` (number of features to keep; default `10`), and the global `random_seed` (passed through for the stochastic mutual-information estimator).
+  - **Behaviour**: When `enabled: false`, it passes features through unchanged; otherwise it fits the score function on the training matrix (target-aware) and retains the top-`k` columns. An unsupported `method` raises `ValueError` at pipeline construction.
 
 ### Sprint 5: Model Cross-Validation, Tuning & Diagnostics
 * **Stratified $K$-Fold Cross-Validation (`StratifiedKFold`)**: Implements 5-fold Stratified CV to prevent target class distribution skew across training and validation folds.
@@ -135,13 +145,13 @@ aiap_capstone/
 
 ## 6. Sprint 5 Model Benchmark & Optimization Summary
 
-Detailed cross-validation and evaluation metrics across candidate model families evaluated on a 5-fold Stratified CV split and held-out test dataset ($N_{\text{test}} = 20\%$):
+Detailed cross-validation and evaluation metrics across candidate model families evaluated on a 5-fold Stratified CV split and held-out test dataset ($N_{\text{test}} = 20\%$). All models consume the 5 features retained by the seeded $k$-best mutual-information selector after one-hot expansion of `membership_tier` ($monthly\_spend$, $customer\_satisfaction\_score$, $number\_of\_complaints$, $complaint\_dissatisfaction$, $membership\_tier\_Basic$):
 
 | Model Strategy | Optimization Strategy | Best CV F1 | CV F1 (Mean ± Std) | Train F1 (Mean) | Gen Gap | Overfit Alert | Test Acc | Test Prec | Test Rec | Test F1 | Test ROC-AUC | Test PR-AUC |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Logistic Regression** | $L_2$ Regularization ($C=1.0$), Balanced Weights | 0.7420 | 0.7420 ± 0.035 | 0.7650 | 0.0230 | False | 0.8250 | 0.7800 | 0.7500 | 0.7647 | 0.8600 | 0.7250 |
-| **Random Forest** | Balanced Subsample, $N_{\text{trees}}=100$ | 0.8150 | 0.8150 ± 0.028 | 0.8820 | 0.0670 | False | 0.8750 | 0.8333 | 0.8333 | 0.8333 | 0.9120 | 0.8150 |
-| **Gradient Boosting** | $\eta=0.1$, $\text{Depth}=5$, $N_{\text{trees}}=100$ | **0.8460** | **0.8460 ± 0.021** | **0.8950** | **0.0490** | **False** | **0.9000** | **0.8571** | **0.8571** | **0.8571** | **0.9350** | **0.8420** |
+| **Logistic Regression** | $L_2$ Regularization ($C=10.0$), Balanced Weights, $lbfgs$ | 0.4543 | 0.4543 ± 0.0551 | 0.4564 | 0.0021 | False | 0.7400 | 0.3472 | 0.8333 | 0.4902 | 0.8422 | 0.5170 |
+| **Random Forest** | Balanced Subsample, $N_{\text{trees}}=100$, $max\_depth=8$ | **0.4880** | **0.4880 ± 0.0956** | **0.8049** | **0.3169** | **True** | **0.8150** | **0.4146** | **0.5667** | **0.4789** | **0.8282** | **0.4650** |
+| **Gradient Boosting** | $\eta=0.05$, $\text{Depth}=5$, $N_{\text{trees}}=50$ | 0.4311 | 0.4311 ± 0.0543 | 0.8222 | 0.3910 | True | 0.8550 | 0.5455 | 0.2000 | 0.2927 | 0.8033 | 0.4512 |
 
 ---
 
