@@ -115,17 +115,26 @@ aiap_capstone/
 
 ### Sprint 3: Preprocessing & Schema Validation
 * **Data Auditing**: Raw missing value auditing, outlier capping using Interquartile Range ($1.5 \times \text{IQR}$), and explicit schema verification.
-* **Feature Engineering**: Custom transformers calculating `spend_per_visit` and `complaint_dissatisfaction` (see `src/feature_engineering.py` below).
-* **Skew Transformation**: Optional `PowerTransformer` (Yeo-Johnson) applied to numerical features when `transformation.skew: "power"` is set in `config.yaml`; disabled by default (`"none"`).
-* **Scaling & Encoding**: Robust scaling (`RobustScaler`) for continuous numerical features; one-hot encoding for categorical tiers (`membership_tier`) — tier churn is non-monotonic (Basic > Premium > Pro), so ordinal encoding would impose a false ordering.
-* **Feature Selection**: Seeded `SelectKBest` wrapper (see below) ranks the full engineered feature set and keeps the top `feature_selection.k_best` features.
+* **Feature Engineering (after imputation)**: Raw numerical source columns are first imputed and IQR-capped by a dedicated `source_cleaner` stage, and only then do the custom transformers derive 7 domain features (see `src/feature_engineering.py` below) — the reordered flow ensures derived features are computed from clean values, and every stage is fitted on the training split only.
+* **Skew Transformation**: `PowerTransformer` (Yeo-Johnson) applied to numerical features when `transformation.skew: "power"` is set in `config.yaml` — active in the current configuration (`"power"`); set `"none"` to disable.
+* **Scaling & Encoding**: Robust scaling (`RobustScaler`) for continuous numerical features; one-hot encoding for categorical tiers (`membership_tier`) — tier churn is non-monotonic (Basic 0.194 > Premium 0.131 > Pro 0.047), so ordinal encoding would impose a false ordering.
+* **Feature Selection**: Seeded `SelectKBest` wrapper (see below) first removes near-duplicate features via a Pearson-correlation redundancy filter (`redundancy_threshold: 0.90`), then ranks the full engineered feature set and keeps the top `feature_selection.k_best` (currently `5`).
 
 #### `src/feature_engineering.py` — Custom Transformers & Feature Selection
-* **`SpendPerVisitTransformer`**: Derives `spend_per_visit = monthly_spend / (visits + ε)`. Stateless (`requires_fit=False`).
-* **`ComplaintDissatisfactionTransformer`**: Derives `complaint_dissatisfaction = number_of_complaints × (1 − customer_satisfaction_score)`. Stateless (`requires_fit=False`).
+Seven stateless domain-feature transformers (`requires_fit=False`), each grounded in observed churn statistics from the EDA:
+* **`SpendPerVisitTransformer`**: `spend_per_visit = monthly_spend / (visits + ε)`.
+* **`ComplaintDissatisfactionTransformer`**: `complaint_dissatisfaction = number_of_complaints × (1 − customer_satisfaction_score)`.
+* **`ComplaintRiskBandTransformer`**: `complaint_risk_band = 1` when complaints < 3 — low engagement (few complaints) is itself a disengagement signal (~0.30 churn vs ~0.04 at ≥ 6 complaints).
+* **`VisitsRiskBandTransformer`**: `visits_risk_band = 1` when visits ≥ 15 — heavy users show elevated churn (0.10 < 7 visits, 0.17 ≥ 15).
+* **`DiscountDependencyTransformer`**: `discount_dependency = discount_usage_rate × monthly_spend` — spend captured through discounts (churn rises with the band: 0.15 < 0.2, 0.18 ≥ 0.4).
+* **`HighDiscountFlagTransformer`**: `high_discount_flag = 1` when `discount_usage_rate ≥ 0.4`.
+* **`ValueTierMismatchTransformer`**: `value_tier_mismatch = 1` for below-median spend (< 54.65) on the Premium tier — low-value spend on a high tier is the most at-risk mismatch group.
+
+Plus two selector components:
+* **`CorrelationFilter`**: Greedy near-collinearity removal — keeps the first column in order and drops any later column whose maximum |Pearson correlation| with an already-kept column is ≥ `redundancy_threshold` (0.90 in the current config). Stateless.
 * **`FeatureSelector`**: Target-aware wrapper around `SelectKBest` that plugs into the pipeline like any transformer.
-  - **Config knobs** (from `config.yaml`): `feature_selection.enabled` (default `true`), `feature_selection.method` (`mutual_info_classif` | `f_classif` | `chi2`; default `mutual_info_classif`), `feature_selection.k_best` (number of features to keep; default `10`), and the global `random_seed` (passed through for the stochastic mutual-information estimator).
-  - **Behaviour**: When `enabled: false`, it passes features through unchanged; otherwise it fits the score function on the training matrix (target-aware) and retains the top-`k` columns. An unsupported `method` raises `ValueError` at pipeline construction.
+  - **Config knobs** (from `config.yaml`): `feature_selection.enabled` (default `true`), `feature_selection.method` (`mutual_info_classif` | `f_classif` | `chi2`; default `mutual_info_classif`), `feature_selection.k_best` (number of features to keep; code default `10`, currently `5`), `feature_selection.redundancy_filter` (default `true`), `feature_selection.redundancy_threshold` (default `0.90`), and the global `random_seed` (passed through for the stochastic mutual-information estimator).
+  - **Behaviour**: When `enabled: false`, it passes features through unchanged; otherwise it drops near-duplicates via the `CorrelationFilter`, then fits the score function on the training matrix (target-aware) and retains the top-`k` columns. An unsupported `method` raises `ValueError` at pipeline construction.
 
 ### Sprint 5: Model Cross-Validation, Tuning & Diagnostics
 * **Stratified $K$-Fold Cross-Validation (`StratifiedKFold`)**: Implements 5-fold Stratified CV to prevent target class distribution skew across training and validation folds.
@@ -137,21 +146,41 @@ aiap_capstone/
   - Automatically calculates `generalization_gap` = `train_f1_mean` - `val_f1_mean`.
   - Issues explicit logger warnings when the gap exceeds `overfitting_threshold: 0.10`.
   - Generates diagnostic learning curves across varied training set sizes.
+* **Variant Benchmarking (A/B/C)**: Before the main run, three preprocessing variants are benchmarked on the same seeded 80/20 split across all three model families, to attribute performance to the pipeline design rather than model choice:
+  - **Variant A** — full pipeline: source cleaning + 7 engineered features + redundancy-aware $k$-best selection (15 input features → 5 retained).
+  - **Variant B** — no engineered features: raw numerics only (8 input features → 5 retained); the engineering step becomes a no-op passthrough.
+  - **Variant C** — no feature selection: full feature matrix kept (15 features, selector disabled).
 * **Champion Model Selection & Artifact Serialization**:
-  - Automatically identifies the top-performing model strategy based on cross-validation $F_1$-score optimization.
+  - Automatically identifies the top-performing model strategy from **Variant A** (the full pipeline) based on cross-validation $F_1$-score optimization.
   - Serializes the champion estimator state and hyperparameter dictionary to `models/champion_model.joblib`.
 
 ---
 
 ## 6. Sprint 5 Model Benchmark & Optimization Summary
 
-Detailed cross-validation and evaluation metrics across candidate model families evaluated on a 5-fold Stratified CV split and held-out test dataset ($N_{\text{test}} = 20\%$). All models consume the 5 features retained by the seeded $k$-best mutual-information selector after one-hot expansion of `membership_tier` ($monthly\_spend$, $customer\_satisfaction\_score$, $number\_of\_complaints$, $complaint\_dissatisfaction$, $membership\_tier\_Basic$):
+Detailed cross-validation and evaluation metrics across candidate model families evaluated on a 5-fold Stratified CV split and held-out test dataset ($N_{\text{test}} = 20\%$), run on the current leakage-safe pipeline (imputation and IQR capping of raw numerics before feature engineering, `PowerTransformer` active, redundancy filter at 0.90, $k=5$ selection).
+
+**Variant A (full pipeline)** — the redundancy filter drops `complaint_dissatisfaction` (|corr| = 0.906 with `customer_satisfaction_score`), and the mutual-information selector then retains 5 of 15 features: `number_of_complaints`, `visits_risk_band`, `high_discount_flag`, `membership_tier_Basic`, and `membership_tier_Pro` (one-hot columns after `membership_tier` expansion):
 
 | Model Strategy | Optimization Strategy | Best CV F1 | CV F1 (Mean ± Std) | Train F1 (Mean) | Gen Gap | Overfit Alert | Test Acc | Test Prec | Test Rec | Test F1 | Test ROC-AUC | Test PR-AUC |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Logistic Regression** | $L_2$ Regularization ($C=10.0$), Balanced Weights, $lbfgs$ | 0.4543 | 0.4543 ± 0.0551 | 0.4564 | 0.0021 | False | 0.7400 | 0.3472 | 0.8333 | 0.4902 | 0.8422 | 0.5170 |
-| **Random Forest** | Balanced Subsample, $N_{\text{trees}}=100$, $max\_depth=8$ | **0.4880** | **0.4880 ± 0.0956** | **0.8049** | **0.3169** | **True** | **0.8150** | **0.4146** | **0.5667** | **0.4789** | **0.8282** | **0.4650** |
-| **Gradient Boosting** | $\eta=0.05$, $\text{Depth}=5$, $N_{\text{trees}}=50$ | 0.4311 | 0.4311 ± 0.0543 | 0.8222 | 0.3910 | True | 0.8550 | 0.5455 | 0.2000 | 0.2927 | 0.8033 | 0.4512 |
+| **Logistic Regression** | $L_2$ Regularization ($C=0.01$), Balanced Weights, $lbfgs$ | **0.3059** | 0.3059 ± 0.0412 | 0.3048 | −0.0011 | False | 0.545 | 0.1789 | 0.5667 | 0.2720 | 0.5875 | 0.2099 |
+| **Random Forest** | Balanced Weights, $N_{\text{trees}}=200$, $max\_depth=3$, $min\_samples\_leaf=2$ | 0.2966 | 0.2966 ± 0.0317 | 0.3239 | 0.0273 | False | 0.550 | 0.1875 | 0.6000 | 0.2857 | 0.6102 | 0.2028 |
+| **Gradient Boosting** | $\eta=0.2$, $\text{Depth}=3$, $N_{\text{trees}}=150$, Balanced Weights | 0.1302 | 0.1302 ± 0.0464 | 0.7829 | 0.6526 | True | 0.830 | 0.1667 | 0.0333 | 0.0556 | 0.5299 | 0.1583 |
+
+**Champion**: Variant A **Logistic Regression** (Best CV F1 **0.3059**), serialized to `models/champion_model.joblib`.
+
+**Variant comparison** (Test F1 on the same seeded 80/20 split; Variant B = raw numerics only, Variant C = no feature selection):
+
+| Model | Variant A (full pipeline) | Variant B (raw numerics) | Variant C (no selection) |
+| :--- | :--- | :--- | :--- |
+| Logistic Regression | 0.2720 | 0.2698 | 0.2439 |
+| Random Forest | 0.2857 | 0.2835 | 0.2764 |
+| Gradient Boosting | 0.0556 | 0.0556 | 0.0000 |
+
+Engineering + redundancy-aware selection is net non-negative for every model (A ≥ B ≥ C for Logistic Regression and Random Forest; A = B > C for Gradient Boosting) — the derived domain features help, and dropping the near-collinear `complaint_dissatisfaction` alongside the $k=5$ cut does not cost accuracy.
+
+> **Note on the lower absolute scores vs the earlier Sprint 5 table (LR 0.4543 / RF 0.4880 / GB 0.4311)**: those numbers came from the pre-remediation pipeline, which fitted imputation/capping on the full dataset before feature engineering and selected $k=10$ without a redundancy filter. The current numbers reflect the stricter leakage-safe pipeline (train-only fitting throughout, capping before engineering, $k=5$ with the 0.90 redundancy filter) and are the honest scores to compare against going forward.
 
 ---
 
